@@ -1,4 +1,4 @@
-import { createPublicClient, http, parseAbi } from "viem";
+import { createPublicClient, http, parseAbi, type PublicClient } from "viem";
 import { mainnet } from "viem/chains";
 import { isStale } from "./isStale.js";
 import { quoteFromFeed } from "./quote.js";
@@ -18,8 +18,8 @@ export type CheckPriceInput = {
   maxAgeSeconds: number;
   amountEth?: number | null;
   nowSeconds?: number;
-  /** @internal inject mock client for tests (no live RPC) */
-  __client?: { readContract: (args: unknown) => Promise<unknown> };
+  /** @internal inject mock client for tests (no live RPC) — viem-compatible */
+  __client?: Pick<PublicClient, "readContract">;
 };
 
 export type CheckPriceResult = {

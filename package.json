@@ -4,16 +4,21 @@
   "description": "Guardrail for onchain agents — BLOCK if Chainlink price is stale",
   "type": "module",
   "bin": {
-    "stale": "./dist/cli.js"
+    "stale": "./dist/cli.js",
+    "stale-mcp": "./dist/mcp/server.js"
   },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "cli": "tsx src/cli.ts",
-    "test": "tsx --test src/*.test.ts"
+    "test": "tsx --test src/*.test.ts src/mcp/*.test.ts",
+    "mcp": "tsx src/mcp/server.ts"
   },
   "dependencies": {
-    "viem": "^2.21.0"
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "viem": "^2.21.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.7.0",

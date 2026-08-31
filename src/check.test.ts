@@ -1,14 +1,15 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import type { PublicClient } from "viem";
 import { checkPrice } from "./check.js";
 
 const FEED = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
 const RPC = "https://ethereum-rpc.publicnode.com";
 const NOW = 1_724_520_000;
 
-function mockClient(opts: { answer: bigint; updatedAt: bigint; decimals: number | bigint | Error }) {
+function mockClient(opts: { answer: bigint; updatedAt: bigint; decimals: number | bigint | Error }): Pick<PublicClient, "readContract"> {
   return {
-    readContract: async ({ functionName }: { functionName: string }) => {
+    readContract: (async ({ functionName }: { functionName: string }) => {
       if (functionName === "latestRoundData") {
         // (roundId, answer, startedAt, updatedAt, answeredInRound)
         return [1n, opts.answer, 1n, opts.updatedAt, 1n] as const;
@@ -18,7 +19,7 @@ function mockClient(opts: { answer: bigint; updatedAt: bigint; decimals: number 
         return opts.decimals;
       }
       throw new Error(`unexpected ${functionName}`);
-    },
+    }) as unknown as PublicClient["readContract"],
   };
 }
 
