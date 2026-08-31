@@ -11,7 +11,11 @@ export type QuoteResult = {
   quoteUsd: number | null;
 };
 
-// Fail closed: bad answer, decimals, or amount throw. Caller (checkPrice) converts to BLOCK.
+/**
+ * Price math from official Data Feed `answer` + `decimals`.
+ * Fail closed: bad answer/decimals/amount throw — caller converts to BLOCK.
+ * Uses viem `formatUnits` per https://viem.sh/docs/utilities/formatUnits
+ */
 export function quoteFromFeed({ answer, decimals, amountEth }: QuoteInput): QuoteResult {
   if (typeof answer !== "bigint") {
     throw new Error("answer must be bigint");
@@ -20,12 +24,8 @@ export function quoteFromFeed({ answer, decimals, amountEth }: QuoteInput): Quot
     throw new Error(`invalid answer ${answer.toString()}`);
   }
 
-  let dec: number;
-  if (typeof decimals === "bigint") dec = Number(decimals);
-  else if (typeof decimals === "number") dec = decimals;
-  else throw new Error("decimals must be number or bigint");
-
-  if (!Number.isInteger(dec) || dec < 0 || dec > 36) {
+  const dec = typeof decimals === "bigint" ? Number(decimals) : decimals;
+  if (typeof dec !== "number" || !Number.isInteger(dec) || dec < 0 || dec > 36) {
     throw new Error(`invalid decimals ${String(decimals)}`);
   }
 
@@ -35,13 +35,13 @@ export function quoteFromFeed({ answer, decimals, amountEth }: QuoteInput): Quot
     }
   }
 
-  const priceUsdStr = formatUnits(answer, dec);
-  const priceUsd = Number(priceUsdStr);
+  // viem formatUnits: string value scaled by decimals, e.g. 245377000000n + 8 → "2453.77"
+  const priceUsd = Number(formatUnits(answer, dec));
   if (!Number.isFinite(priceUsd) || priceUsd < 0) {
-    throw new Error(`invalid priceUsd ${priceUsdStr}`);
+    throw new Error(`invalid priceUsd ${String(priceUsd)}`);
   }
 
-  const quoteUsd = amountEth !== undefined && amountEth !== null ? amountEth * priceUsd : null;
+  const quoteUsd = amountEth != null ? amountEth * priceUsd : null;
   if (quoteUsd !== null && (!Number.isFinite(quoteUsd) || quoteUsd < 0)) {
     throw new Error(`invalid quoteUsd ${String(quoteUsd)}`);
   }

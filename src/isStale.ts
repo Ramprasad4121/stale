@@ -12,13 +12,17 @@ export type IsStaleResult = {
   reason: string;
 };
 
-// Fail closed: missing, unparseable, or future timestamp => BLOCK.
-// No Chainlink call here — pure check so it can be unit tested and reused in CRE.
+/**
+ * Pure freshness check — no RPC. Fail closed on missing, unparseable, or future timestamp.
+ * Safe to unit-test and reuse in CRE workflows.
+ * Official field: Data Feed `latestRoundData.updatedAt` (uint80 seconds).
+ */
 export function isStale({
   updatedAt,
   nowSeconds,
   maxAgeSeconds,
 }: IsStaleInput): IsStaleResult {
+  // Validate window first — bad window is BLOCK (fail closed, no partial age)
   if (!Number.isFinite(nowSeconds) || !Number.isFinite(maxAgeSeconds)) {
     return {
       decision: "BLOCK",
@@ -34,17 +38,18 @@ export function isStale({
     };
   }
 
-  let updatedAtSeconds: number | null = null;
+  // Parse updatedAt → seconds (fail closed on any unparseable)
+  let updatedAtSeconds: number;
   try {
-    if (updatedAt === null || updatedAt === undefined || updatedAt === "") {
-      throw new Error("missing");
-    }
+    if (updatedAt === null || updatedAt === undefined) throw new Error("missing");
+
     if (typeof updatedAt === "bigint") {
       if (updatedAt < 0n) throw new Error("negative");
+      // Use Number for age math; updatedAt fits in 53 bits (uint80 but timestamp < 2^31)
       updatedAtSeconds = Number(updatedAt);
     } else if (typeof updatedAt === "number") {
       if (!Number.isFinite(updatedAt)) throw new Error("not finite");
-      updatedAtSeconds = Math.floor(updatedAt);
+      updatedAtSeconds = Math.trunc(updatedAt);
     } else if (typeof updatedAt === "string") {
       const s = updatedAt.trim();
       if (s === "") throw new Error("empty");
@@ -53,12 +58,13 @@ export function isStale({
       } else {
         const n = Number(s);
         if (!Number.isFinite(n)) throw new Error("not finite");
-        updatedAtSeconds = Math.floor(n);
+        updatedAtSeconds = Math.trunc(n);
       }
     } else {
       throw new Error("unsupported type");
     }
-    if (!Number.isFinite(updatedAtSeconds!) || updatedAtSeconds! < 0) {
+
+    if (!Number.isFinite(updatedAtSeconds) || updatedAtSeconds < 0) {
       throw new Error("invalid seconds");
     }
   } catch {
@@ -69,14 +75,15 @@ export function isStale({
     };
   }
 
-  const ageSeconds = Math.floor(nowSeconds) - updatedAtSeconds!;
+  const nowTrunc = Math.trunc(nowSeconds);
+  const ageSeconds = nowTrunc - updatedAtSeconds;
 
-  // not-yet-valid is also BLOCK — clock skew or future timestamp
+  // not-yet-valid is BLOCK — clock skew or future timestamp (per AGENTS.md)
   if (ageSeconds < 0) {
     return {
       decision: "BLOCK",
       ageSeconds,
-      reason: `not-yet-valid: updatedAt ${updatedAtSeconds} is in the future (now ${Math.floor(nowSeconds)}) — BLOCK`,
+      reason: `not-yet-valid: updatedAt ${updatedAtSeconds} is in the future (now ${nowTrunc}) — BLOCK`,
     };
   }
   if (ageSeconds > maxAgeSeconds) {

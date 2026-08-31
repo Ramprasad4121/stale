@@ -3,10 +3,14 @@ import { mainnet } from "viem/chains";
 import { isStale } from "./isStale.js";
 import { quoteFromFeed } from "./quote.js";
 
+/**
+ * Official Data Feed ABI — only `decimals` and `latestRoundData` per
+ * https://docs.chain.link/data-feeds/api-reference
+ */
 const feedAbi = parseAbi([
   "function decimals() view returns (uint8)",
   "function latestRoundData() view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)",
-]);
+] as const);
 
 export type CheckPriceInput = {
   rpc: string;
@@ -14,8 +18,8 @@ export type CheckPriceInput = {
   maxAgeSeconds: number;
   amountEth?: number | null;
   nowSeconds?: number;
-  // internal: inject mock client for tests (no live RPC)
-  __client?: { readContract: (args: any) => Promise<any> };
+  /** @internal inject mock client for tests (no live RPC) */
+  __client?: { readContract: (args: unknown) => Promise<unknown> };
 };
 
 export type CheckPriceResult = {
@@ -55,21 +59,24 @@ function blockResult(
   };
 }
 
+/**
+ * Full check: viem `latestRoundData` + `decimals` → `isStale` → `quoteFromFeed`.
+ * Fail closed on any RPC/read/zero/negative/invalid. No wallet, no write.
+ * Verified against viem `createPublicClient` + `readContract` docs.
+ */
 export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResult> {
   const { rpc, feed, maxAgeSeconds, amountEth } = input;
   const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);
 
-  // Fail closed on bad amount (also checked in CLI, but keep here for library use)
   if (amountEth !== undefined && amountEth !== null) {
     if (typeof amountEth !== "number" || !Number.isFinite(amountEth) || amountEth < 0) {
       return blockResult(input, `invalid amountEth ${String(amountEth)} — BLOCK (fail closed)`);
     }
   }
-
   if (!/^0x[a-fA-F0-9]{40}$/.test(feed)) {
     return blockResult(input, `invalid feed ${feed} — BLOCK`);
   }
-  if (!Number.isFinite(maxAgeSeconds) || maxAgeSeconds < 0 || !Number.isInteger(maxAgeSeconds)) {
+  if (!Number.isFinite(maxAgeSeconds) || !Number.isInteger(maxAgeSeconds) || maxAgeSeconds < 0) {
     return blockResult(input, `invalid maxAgeSeconds ${String(maxAgeSeconds)} — BLOCK`);
   }
   if (typeof rpc !== "string" || rpc.trim() === "") {
@@ -83,54 +90,56 @@ export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResu
       transport: http(rpc),
     });
 
+  // Parallel reads — viem batches `eth_call` at end of tick (public client docs)
   let answer: bigint;
   let updatedAt: bigint;
+  let decimals: number;
+
   try {
-    const data = (await client.readContract({
-      address: feed as `0x${string}`,
-      abi: feedAbi,
-      functionName: "latestRoundData",
-    })) as readonly [bigint, bigint, bigint, bigint, bigint];
+    const [roundData, dec] = await Promise.all([
+      client.readContract({
+        address: feed as `0x${string}`,
+        abi: feedAbi,
+        functionName: "latestRoundData",
+      }) as Promise<readonly [bigint, bigint, bigint, bigint, bigint]>,
+      client.readContract({
+        address: feed as `0x${string}`,
+        abi: feedAbi,
+        functionName: "decimals",
+      }) as Promise<number | bigint>,
+    ]);
+
+    const data = roundData as readonly [bigint, bigint, bigint, bigint, bigint];
     answer = data[1];
     updatedAt = data[3];
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return blockResult(input, `failed to read latestRoundData from ${feed} — BLOCK (fail closed): ${msg}`);
-  }
 
-  if (updatedAt === 0n) {
-    return blockResult(input, `updatedAt is 0 (no data) from ${feed} — BLOCK`, {
-      answer: answer.toString(),
-      updatedAt: updatedAt.toString(),
-      ageSeconds: null,
-    });
-  }
-  if (answer <= 0n) {
-    return blockResult(input, `answer is ${answer.toString()} (invalid price) from ${feed} — BLOCK`, {
-      answer: answer.toString(),
-      updatedAt: updatedAt.toString(),
-      ageSeconds: null,
-    });
-  }
-
-  let decimals: number;
-  try {
-    const d = (await client.readContract({
-      address: feed as `0x${string}`,
-      abi: feedAbi,
-      functionName: "decimals",
-    })) as number | bigint;
+    const d = dec as number | bigint;
     decimals = typeof d === "bigint" ? Number(d) : d;
     if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
       throw new Error(`invalid decimals ${String(d)}`);
     }
+
+    if (updatedAt === 0n) {
+      return blockResult(input, `updatedAt is 0 (no data) from ${feed} — BLOCK`, {
+        answer: answer.toString(),
+        updatedAt: updatedAt.toString(),
+        ageSeconds: null,
+      });
+    }
+    if (answer <= 0n) {
+      return blockResult(input, `answer is ${answer.toString()} (invalid price) from ${feed} — BLOCK`, {
+        answer: answer.toString(),
+        updatedAt: updatedAt.toString(),
+        ageSeconds: null,
+      });
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return blockResult(input, `failed to read decimals() from ${feed} — BLOCK (fail closed): ${msg}`, {
-      answer: answer.toString(),
-      updatedAt: updatedAt.toString(),
-      ageSeconds: null,
-    });
+    // Distinguish which call failed by message; keep generic fail-closed
+    if (msg.includes("decimals")) {
+      return blockResult(input, `failed to read decimals() from ${feed} — BLOCK (fail closed): ${msg}`);
+    }
+    return blockResult(input, `failed to read latestRoundData from ${feed} — BLOCK (fail closed): ${msg}`);
   }
 
   const stale = isStale({ updatedAt, nowSeconds: now, maxAgeSeconds });
