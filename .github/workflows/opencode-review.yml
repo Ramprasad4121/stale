@@ -1,0 +1,52 @@
+name: opencode-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: opencode/muse-spark-1.2-contributor-free
+          use_github_token: true
+          agent: plan
+          prompt: |
+            You are the maintainer of github.com/Ramprasad4121/stale.
+            Review this PR. Do not push commits. Do not merge. Comment only.
+
+            Product:
+            - Guardrail for onchain agents. Official Chainlink price + time.
+            - ALLOW or BLOCK. Quote is extra. execute is dry-run only.
+            - Never send a transaction. Never invent feeds or APIs.
+
+            Fail the review if any of these are true:
+            - freshness can ALLOW on stale/missing/zero/negative/unparseable data
+            - a path sends a tx, uses a wallet, or calls Aave/CCIP/CRE-write/Agents
+            - tests hit live RPC
+            - AGENTS.md or LINUS.md is added
+            - secrets or .env are added
+            - decimals are hardcoded when --feed can change
+
+            Review like a senior engineer:
+            - read the diff AND the surrounding file
+            - check isStale, quoteFromFeed, checkPrice, cli, tests, skill.md, CI
+            - say BLOCKER / SHOULD / NIT
+            - no hype, no "great work", no style-only noise
+            - if the PR is clean, say so in 5 lines
+
+            First sentence: PASS or FAIL.
