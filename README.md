@@ -124,5 +124,3 @@ CI: `.github/workflows/test.yml` runs `node 22`, `npm ci`, `npm test`.
 ## License
 
 MIT
-
-QA smoke.
