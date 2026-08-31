@@ -115,6 +115,17 @@ npm test          # tsx --test src/*.test.ts
 
 CI: `.github/workflows/test.yml` runs `node 22`, `npm ci`, `npm test`.
 
+## CRE simulation
+
+Local CRE TypeScript workflow that does the same check as `checkPrice` (no DON deploy, no tx). See [`cre/README.md`](cre/README.md) for simulation:
+
+```bash
+cre workflow simulate --help
+cre workflow simulate ./cre/workflows/stale --config ./cre/workflows/stale/config.staging.json --allow-insecure-rpc
+```
+
+Single `cron` trigger (as `read-data-feeds-ts` template), reads `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` via chain-read, `isStale` + `quoteFromFeed`, outputs JSON with `allowExecute` + dry-run note.
+
 ## What v1 does not do
 
 - Does not send transactions, swaps, bridges, or supply.

@@ -1,0 +1,16 @@
+# CRE Workflow Settings File — copied keys from read-data-feeds-ts template
+staging-settings:
+  user-workflow:
+    workflow-name: "stale-cron-staging"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.staging.json"
+    secrets-path: ""
+
+production-settings:
+  user-workflow:
+    workflow-name: "stale-cron-production"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.production.json"
+    secrets-path: ""

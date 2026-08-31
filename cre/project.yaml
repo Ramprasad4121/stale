@@ -1,0 +1,10 @@
+# CRE Project Settings File — copied from read-data-feeds-ts template, chain adjusted to ethereum-mainnet
+staging-settings:
+  rpcs:
+    - chain-name: ethereum-mainnet
+      url: https://1rpc.io/eth
+
+production-settings:
+  rpcs:
+    - chain-name: ethereum-mainnet
+      url: https://1rpc.io/eth
