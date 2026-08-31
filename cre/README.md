@@ -29,15 +29,16 @@ Decimals fetched via `decimals()` — not hardcoded.
 
 ## Simulate (local, no DON deploy)
 
-From repo root:
-
 ```bash
-# help (verifies cre is installed)
-cre workflow simulate --help
-
-# simulate the stale workflow (cron trigger, as template uses)
-cre workflow simulate ./cre/workflows/stale --config ./cre/workflows/stale/config.staging.json --allow-insecure-rpc
+cd cre
+cre workflow simulate workflows/stale \
+  --target staging-settings \
+  --non-interactive \
+  --trigger-index 0 \
+  --allow-insecure-rpc
 ```
+
+Note: without --non-interactive the CLI can hang. 429 from the RPC → BLOCK (fail closed). No private key. No deploy.
 
 Simulate on public RPCs (publicnode, 1rpc.io) compiled then failed or hung (context canceled / 120s timeout). No DON deploy. No broadcast.
 

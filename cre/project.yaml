@@ -2,9 +2,9 @@
 staging-settings:
   rpcs:
     - chain-name: ethereum-mainnet
-      url: https://1rpc.io/eth
+      url: https://ethereum-rpc.publicnode.com
 
 production-settings:
   rpcs:
     - chain-name: ethereum-mainnet
-      url: https://1rpc.io/eth
+      url: https://ethereum-rpc.publicnode.com
