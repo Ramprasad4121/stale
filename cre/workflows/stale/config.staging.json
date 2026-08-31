@@ -2,6 +2,6 @@
   "schedule": "0 */5 * * * *",
   "chainName": "ethereum-mainnet",
   "feed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
-  "maxAgeSeconds": 60,
+  "maxAgeSeconds": 3600,
   "amountEth": 0.5
 }
