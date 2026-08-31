@@ -32,7 +32,7 @@ npm install
 
 ```bash
 # via tsx (dev)
-npx tsx src/cli.ts --rpc https://eth.llamarpc.com --maxAge 3600
+npx tsx src/cli.ts --rpc https://ethereum-rpc.publicnode.com --maxAge 3600
 npx tsx src/cli.ts --rpc $RPC_URL --maxAge 60 --feed 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419
 
 # after build
@@ -66,11 +66,6 @@ isStale({ updatedAt: 1724520000n, nowSeconds: Math.floor(Date.now()/1000), maxAg
 - Does not send transactions, swaps, bridges, or supply.
 - Does not use x402, CCIP, or Agents execution.
 - Single chain / single feed (Ethereum mainnet ETH/USD). Multi-feed and Data Streams (`validFromTimestamp`/`expiresAt`) are later.
-
-## Docs
-
-- `AGENTS.md` — what stale checks and what it never does
-- `LINUS.md` — how to build it (small diffs, fail closed, 8-line plan)
 
 ## License
 
