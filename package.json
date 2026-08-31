@@ -10,7 +10,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "cli": "tsx src/cli.ts",
-    "test": "tsx --test src/isStale.test.ts"
+    "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
     "viem": "^2.21.0"
