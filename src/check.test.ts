@@ -4,6 +4,7 @@ import type { PublicClient } from "viem";
 import { checkPrice } from "./check.js";
 
 const FEED = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
+const BTC_FEED = "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c";
 const RPC = "https://ethereum-rpc.publicnode.com";
 const NOW = 1_724_520_000;
 
@@ -173,6 +174,32 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
     assert.equal(r.decision, "BLOCK");
     assert.equal(r.allowExecute, false);
     assert.match(r.reason, /failed to get chainId/);
+  });
+
+  it("BTC/USD in registry + chainId 1 + complete fresh → ALLOW", async () => {
+    const r = await checkPrice({
+      rpc: RPC,
+      feed: BTC_FEED,
+      maxAgeSeconds: 60,
+      nowSeconds: NOW,
+      __client: mockClient({ answer: 6100000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, chainId: 1 }),
+    });
+    assert.equal(r.decision, "ALLOW");
+    assert.equal(r.allowExecute, true);
+    assert.equal(r.priceUsd, 61000);
+  });
+
+  it("BTC/USD + chainId 11155111 → BLOCK", async () => {
+    const r = await checkPrice({
+      rpc: RPC,
+      feed: BTC_FEED,
+      maxAgeSeconds: 60,
+      nowSeconds: NOW,
+      __client: mockClient({ answer: 6100000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, chainId: 11155111 }),
+    });
+    assert.equal(r.decision, "BLOCK");
+    assert.equal(r.allowExecute, false);
+    assert.match(r.reason, /chainId mismatch/);
   });
 
   it("unknown feed not in registry — BLOCK", async () => {

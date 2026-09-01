@@ -40,6 +40,11 @@ Library:
 Optional: --amount 0.5   --json
 Exit 0 = ALLOW. Exit 1 = BLOCK.
 
+Supported feeds (Ethereum mainnet, default ETH/USD): ETH/USD
+0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419 and BTC/USD
+0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c —
+https://docs.chain.link/data-feeds/price-feeds/addresses?network=ethereum
+
 maxAge is your policy. ETH/USD heartbeat is about 45-50 minutes.
 --maxAge 60 will usually BLOCK even when the feed is healthy.
 
