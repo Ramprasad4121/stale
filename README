@@ -13,6 +13,7 @@ Quick Start
 * Clone and install: git clone https://github.com/Ramprasad4121/stale.git && 
 cd stale && npm install
 * Install from GitHub (until publish): npm install github:Ramprasad4121/stale
+  then npx stale --rpc $RPC_URL --maxAge 3600
 * After publish: npm install @ramprasad4121/stale
 * Run the guard: npx tsx src/cli.ts --rpc https://ethereum-rpc.publicnode.com 
 --maxAge 60 --amount 0.5 --json

@@ -27,6 +27,7 @@
     "test": "tsx --test src/*.test.ts src/mcp/*.test.ts",
     "check:cre-sync": "bash scripts/check-cre-sync.sh",
     "check:pack": "bash scripts/check-pack.sh",
+    "prepare": "npm run build",
     "mcp": "tsx src/mcp/server.ts"
   },
   "dependencies": {
