@@ -11,7 +11,7 @@ Before any agent reads a Data Feed price to quote, gate, or trigger.
 ## How
 
 ```ts
-import { checkPrice, isStale, quoteFromFeed } from "stale";
+import { checkPrice, isStale, quoteFromFeed } from "@ramprasad4121/stale";
 
 // 1. Full check (viem + isStale + quote) — recommended
 const r = await checkPrice({
@@ -20,16 +20,16 @@ const r = await checkPrice({
   maxAgeSeconds: 60,
   amountEth: 0.5, // optional
 });
-// r = { decision, reason, feed, answer, priceUsd, amountEth, quoteUsd, updatedAt, ageSeconds, maxAgeSeconds, now, allowExecute }
-// if !r.allowExecute → do not act, notify human: r.reason
+ // r = { decision, reason, feed, answer, priceUsd, amountEth, quoteUsd, updatedAt, ageSeconds, maxAgeSeconds, now, allowExecute }
+ // if !r.allowExecute → do not act, notify human: r.reason
 
 // 2. Pure check (no RPC)
-import { isStale } from "stale";
+import { isStale } from "@ramprasad4121/stale";
 isStale({ updatedAt: 1724520000n, nowSeconds: Math.floor(Date.now()/1000), maxAgeSeconds: 60 });
-// → { decision: "ALLOW"|"BLOCK", ageSeconds, reason }
+ // → { decision: "ALLOW"|"BLOCK", ageSeconds, reason }
 
 // 3. Price math only
-import { quoteFromFeed } from "stale";
+import { quoteFromFeed } from "@ramprasad4121/stale";
 quoteFromFeed({ answer: 245377000000n, decimals: 8, amountEth: 0.5 });
 // → { priceUsd: 2453.77, quoteUsd: 1226.885 }
 ```

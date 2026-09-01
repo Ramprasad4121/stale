@@ -1,11 +1,11 @@
 # Contributing to stale
 
 Guardrail for onchain agents — PRs only.
-Repo docs: `README` (now `README` not `README.md`), `PROMPT.md`, `skill.md`.
-Package: `npm install stale` — `import { isStale } from "stale"`, `npx stale`, `npx stale-mcp`.
+Repo docs: `README`/`README.md`, `PROMPT.md`, `skill.md`.
+Package: `npm install @ramprasad4121/stale` — `import { isStale } from "@ramprasad4121/stale"`, `npx stale`, `npx stale-mcp`.
 
 - **PRs only, not direct to `main`** — `opencode-review` runs on PRs (`opened`, `synchronize`, `reopened`, `ready_for_review`). Push to a branch, open a PR against `main`.
-- **Tests must stay green** — `npm test` (23: 8 isStale + 6 quote + 5 checkPrice + 4 MCP in `src/*.test.ts` + `src/mcp/*.test.ts`) must pass. No live RPC in tests (mock `viem` `readContract` and MCP `stdio`).
+- **Tests must stay green** — `npm test` (33: 10 isStale + 7 quote + 11 checkPrice + 5 MCP in `src/*.test.ts` + `src/mcp/*.test.ts`, run `npm test` for current count) must pass. No live RPC in tests (mock `viem` `readContract`/`getChainId` and MCP `stdio`).
 - **No secrets** — no private keys, wallet, `.env`, or `AGENTS.md`/`LINUS.md` in git (both are `.gitignore` local-only).
 - **Official Chainlink fields only, fail closed** — `latestRoundData` + `decimals()` (don’t hardcode decimals), `updatedAt == 0` / `answer <= 0` / missing / stale / future → `BLOCK`. See `isStale`, `quoteFromFeed`, `checkPrice`.
 - **CRE simulation** — from `cre/`:

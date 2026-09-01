@@ -177,9 +177,9 @@ failure into `ALLOW`.
   `cre/workflows/stale/package.json` (separate lockfile).
 - Avoid floating `@latest` in security-sensitive paths. `package-lock.json`
   and `cre/bun.lock` / `cre/workflows/stale/bun.lock` pin exact versions.
-- Published package (`files: ["dist", "README", "LICENSE"]`) contains only
-  `dist/` JS/d.ts/maps, `README`, `LICENSE`, and `package.json` (verified via
-  `npm pack --dry-run` → 27 files, 13.6 kB). No `src/*.test.ts`, `AGENTS.md`,
+- Published package (`files: ["dist", "README", "README.md", "LICENSE"]`) contains only
+  `dist/` JS/d.ts/maps, `README`, `README.md`, `LICENSE`, and `package.json` (verified via
+  `npm pack --dry-run` → 28 files, 18.3 kB). No `src/*.test.ts`, `AGENTS.md`,
   `LINUS.md`, `.env`, `node_modules`, or `cre` build artifacts.
 
 ## Fail-closed semantics
