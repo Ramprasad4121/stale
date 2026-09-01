@@ -12,13 +12,17 @@ Quick Start
 
 * Clone and install: git clone https://github.com/Ramprasad4121/stale.git && 
 cd stale && npm install
+* Or install the package: npm install stale
 * Run the guard: npx tsx src/cli.ts --rpc https://ethereum-rpc.publicnode.com 
 --maxAge 60 --amount 0.5 --json
+* From package: npx stale --rpc https://ethereum-rpc.publicnode.com --maxAge 60 
+--amount 0.5 --json
 * Run the tests: npm test
 * Try the CRE simulation: cd cre && cre workflow simulate workflows/stale 
 --target staging-settings --non-interactive --trigger-index 0 
 --allow-insecure-rpc
 * Single prompt for any agent: See PROMPT.md
+* Library via npm: import { isStale, quoteFromFeed, checkPrice } from "stale"
 
 Install on your machine (paste into 
 Claude Code, Codex, or any AI agent)
