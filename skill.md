@@ -43,7 +43,7 @@ npx stale --rpc $RPC_URL --maxAge 60 --amount 0.5 --json
 # --json prints only JSON, default is human lines
 ```
 
-Feed decimals are fetched on-chain via `decimals()` — not hardcoded. Source: https://docs.chain.link/data-feeds/price-feeds/addresses#ethereum-mainnet
+Feed decimals are fetched on-chain via `decimals()` — not hardcoded. Default feed `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` is Ethereum mainnet only — `checkPrice` verifies `eth_chainId === 1` (viem `getChainId`) and `BLOCK`s on mismatch. Source: https://docs.chain.link/data-feeds/price-feeds/addresses#ethereum-mainnet
 
 ## Contracts (JSON)
 
@@ -53,7 +53,7 @@ Feed decimals are fetched on-chain via `decimals()` — not hardcoded. Source: h
 {"decision":"ALLOW","reason":"fresh: age 10s <= maxAge 60s — ALLOW","feed":"0x...","answer":"300000000000","priceUsd":3000,"amountEth":0.5,"quoteUsd":1500,"updatedAt":"1724519990","ageSeconds":10,"maxAgeSeconds":60,"now":1724520000,"allowExecute":true}
 ```
 
-- `allowExecute` is `true` only when `decision === "ALLOW"`.
+- `allowExecute` is `true` only when `decision === "ALLOW"` — it is permission, not an execution call. Do not rename the field.
 - Dry-run: if `!allowExecute` → `execute: skipped`; if `true` → `execute: {"action":"none","note":"v3 dry-run. no tx. no Agents call."}`. No transaction is sent.
 
 ## Out of scope

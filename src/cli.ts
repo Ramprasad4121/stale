@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { checkPrice } from "./check.js";
 
 const DEFAULT_FEED = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419"; // ETH/USD Ethereum mainnet — https://docs.chain.link/data-feeds/price-feeds/addresses#ethereum-mainnet
+// allowExecute is permission (true only if decision ALLOW), not an execution call; execute line stays dry-run {"action":"none"}
 
 function truncate(s: string, n = 200): string {
   return s.length > n ? s.slice(0, n) : s;

@@ -24,7 +24,7 @@ export function isStale({
   maxAgeSeconds,
 }: IsStaleInput): IsStaleResult {
   // Validate window first — bad window is BLOCK (fail closed, no partial age)
-  if (!Number.isFinite(nowSeconds) || !Number.isFinite(maxAgeSeconds)) {
+  if (!Number.isFinite(nowSeconds) || !Number.isInteger(maxAgeSeconds)) {
     return {
       decision: "BLOCK",
       ageSeconds: null,

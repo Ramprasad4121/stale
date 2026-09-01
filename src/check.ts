@@ -12,6 +12,8 @@ const feedAbi = parseAbi([
   "function latestRoundData() view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)",
 ] as const);
 
+const DEFAULT_FEED = "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419";
+
 export type CheckPriceInput = {
   rpc: string;
   feed: string;
@@ -92,7 +94,6 @@ export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResu
 
   // Chain binding: default mainnet ETH/USD proxy must be on chainId 1
   // Skip getChainId when __client is injected and mock does not implement it (existing tests)
-  const DEFAULT_FEED = "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419";
   if (feed.toLowerCase() === DEFAULT_FEED) {
     const maybeGetChainId = (client as unknown as { getChainId?: () => Promise<number> }).getChainId;
     if (typeof maybeGetChainId === "function") {

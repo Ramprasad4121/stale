@@ -69,6 +69,12 @@ describe("isStale", () => {
     assert.equal(r2.decision, "BLOCK");
   });
 
+  it("8. fractional maxAge → BLOCK", () => {
+    const r = isStale({ updatedAt: now, nowSeconds: now, maxAgeSeconds: 0.5 });
+    assert.equal(r.decision, "BLOCK");
+    assert.equal(r.ageSeconds, null);
+  });
+
   it("8. bigint updatedAt works", () => {
     const rFresh = isStale({ updatedAt: BigInt(now - 5), nowSeconds: now, maxAgeSeconds: 60 });
     assert.equal(rFresh.decision, "ALLOW");
