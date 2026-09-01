@@ -46,6 +46,7 @@ act on fresh enough under the caller's `maxAgeSeconds` policy?
   `answeredInRound >= roundId` per
   https://docs.chain.link/data-feeds/api-reference; `startedAt` is not used
   for freshness. Remaining policy (heartbeat, deviation) stays in `ROADMAP`.
+- Chain binding: default `ETH/USD` proxy `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` is Ethereum mainnet only. Node `checkPrice` calls `eth_chainId` (viem `getChainId`) after `createPublicClient({chain: mainnet})` and `BLOCK`s if `chainId !== 1` with `chainId mismatch` reason; mocks without `getChainId` skip the check.
 - Proxy/aggregator behavior: the proxy forwards to the current aggregator.
   A stale proxy still returns whatever the aggregator last wrote. `stale`
   does not try to detect proxy upgrades — it checks the timestamp it actually

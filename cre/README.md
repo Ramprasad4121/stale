@@ -2,7 +2,7 @@
 
 Local simulation of the same check as `src/checkPrice` but via Chainlink CRE TypeScript workflow.
 
-- Reads `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` (ETH/USD Ethereum mainnet) via `PriceFeedAggregator` `latestRoundData` + `decimals` (chain-read only).
+- Reads `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` (ETH/USD Ethereum mainnet) via `PriceFeedAggregator` `latestRoundData` + `decimals` (chain-read only) — CRE binds chain via `chainName: ethereum-mainnet` / `getNetwork` selector; Node `checkPrice` additionally verifies `eth_chainId === 1` for this default feed and `BLOCK`s on mismatch.
 - Uses `isStale` (`cre/lib/isStale.ts` — keep in sync with `src/isStale.ts`) and `quoteFromFeed` (`cre/lib/quote.ts` — keep in sync with `src/quote.ts`).
 - Fail closed on RPC/read/zero/negative/stale/future. No EVM write, no wallet, no `--broadcast`, no DON deploy.
 - Output JSON same shape as CLI `--json` plus `allowExecute` + `execute` dry-run note.

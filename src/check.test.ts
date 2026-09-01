@@ -7,8 +7,8 @@ const FEED = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
 const RPC = "https://ethereum-rpc.publicnode.com";
 const NOW = 1_724_520_000;
 
-function mockClient(opts: { answer: bigint; updatedAt: bigint; decimals: number | bigint | Error; roundId?: bigint; answeredInRound?: bigint }): Pick<PublicClient, "readContract"> {
-  return {
+function mockClient(opts: { answer: bigint; updatedAt: bigint; decimals: number | bigint | Error; roundId?: bigint; answeredInRound?: bigint; chainId?: number | Error }): Pick<PublicClient, "readContract"> & { getChainId?: PublicClient["getChainId"] } {
+  const client: Pick<PublicClient, "readContract"> & { getChainId?: PublicClient["getChainId"] } = {
     readContract: (async ({ functionName }: { functionName: string }) => {
       if (functionName === "latestRoundData") {
         // (roundId, answer, startedAt, updatedAt, answeredInRound)
@@ -21,6 +21,13 @@ function mockClient(opts: { answer: bigint; updatedAt: bigint; decimals: number 
       throw new Error(`unexpected ${functionName}`);
     }) as unknown as PublicClient["readContract"],
   };
+  if (opts.chainId !== undefined) {
+    client.getChainId = (async () => {
+      if (opts.chainId instanceof Error) throw opts.chainId;
+      return opts.chainId as number;
+    }) as unknown as PublicClient["getChainId"];
+  }
+  return client;
 }
 
 describe("checkPrice (mocked viem, no live RPC)", () => {
@@ -127,6 +134,32 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
     assert.equal(r.decision, "ALLOW");
     assert.equal(r.allowExecute, true);
     assert.equal(r.ageSeconds, 10);
+  });
+
+  it("chainId 1 with default feed fresh ALLOW", async () => {
+    const r = await checkPrice({
+      rpc: RPC,
+      feed: FEED,
+      maxAgeSeconds: 60,
+      nowSeconds: NOW,
+      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, chainId: 1 }),
+    });
+    assert.equal(r.decision, "ALLOW");
+    assert.equal(r.allowExecute, true);
+    assert.match(r.reason, /fresh/);
+  });
+
+  it("chainId mismatch BLOCK — Sepolia rpc with mainnet feed", async () => {
+    const r = await checkPrice({
+      rpc: RPC,
+      feed: FEED,
+      maxAgeSeconds: 60,
+      nowSeconds: NOW,
+      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, chainId: 11155111 }),
+    });
+    assert.equal(r.decision, "BLOCK");
+    assert.equal(r.allowExecute, false);
+    assert.match(r.reason, /chainId mismatch/);
   });
 
   it("malformed RPC and invalid feed — fail closed", async () => {
