@@ -1,5 +1,5 @@
 {
-  "name": "stale",
+  "name": "@ramprasad4121/stale",
   "version": "0.1.0",
   "description": "Guardrail for onchain agents — BLOCK if Chainlink price is stale",
   "type": "module",
@@ -26,6 +26,7 @@
     "cli": "tsx src/cli.ts",
     "test": "tsx --test src/*.test.ts src/mcp/*.test.ts",
     "check:cre-sync": "bash scripts/check-cre-sync.sh",
+    "check:pack": "bash scripts/check-pack.sh",
     "mcp": "tsx src/mcp/server.ts"
   },
   "dependencies": {
