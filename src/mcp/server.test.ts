@@ -8,7 +8,7 @@ describe("MCP server — stale tools (no live RPC for isStale/quote, mocked chec
     const transport = new StdioClientTransport({
       command: "npx",
       args: ["tsx", "src/mcp/server.ts"],
-      cwd: "/Users/ramprasadgoud/Downloads/building/stale",
+      cwd: process.cwd(),
     });
     const client = new Client({ name: "test", version: "1.0.0" });
     await client.connect(transport);
@@ -22,7 +22,7 @@ describe("MCP server — stale tools (no live RPC for isStale/quote, mocked chec
     const transport = new StdioClientTransport({
       command: "npx",
       args: ["tsx", "src/mcp/server.ts"],
-      cwd: "/Users/ramprasadgoud/Downloads/building/stale",
+      cwd: process.cwd(),
     });
     const client = new Client({ name: "test", version: "1.0.0" });
     await client.connect(transport);
@@ -45,7 +45,7 @@ describe("MCP server — stale tools (no live RPC for isStale/quote, mocked chec
     const transport = new StdioClientTransport({
       command: "npx",
       args: ["tsx", "src/mcp/server.ts"],
-      cwd: "/Users/ramprasadgoud/Downloads/building/stale",
+      cwd: process.cwd(),
     });
     const client = new Client({ name: "test", version: "1.0.0" });
     await client.connect(transport);
@@ -70,7 +70,7 @@ describe("MCP server — stale tools (no live RPC for isStale/quote, mocked chec
     const transport = new StdioClientTransport({
       command: "npx",
       args: ["tsx", "src/mcp/server.ts"],
-      cwd: "/Users/ramprasadgoud/Downloads/building/stale",
+      cwd: process.cwd(),
     });
     const client = new Client({ name: "test", version: "1.0.0" });
     await client.connect(transport);
