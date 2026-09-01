@@ -3,10 +3,23 @@
   "version": "0.1.0",
   "description": "Guardrail for onchain agents — BLOCK if Chainlink price is stale",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "bin": {
     "stale": "./dist/cli.js",
     "stale-mcp": "./dist/mcp/server.js"
   },
+  "files": [
+    "dist",
+    "README",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
