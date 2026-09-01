@@ -39,4 +39,15 @@ describe("quoteFromFeed", () => {
     assert.throws(() => quoteFromFeed({ answer: 100n, decimals: 8, amountEth: Infinity as any }), /invalid amountEth/);
     assert.throws(() => quoteFromFeed({ answer: 100n, decimals: 8, amountEth: -1 }), /invalid amountEth/);
   });
+
+  it("huge answer and overflow — handled", () => {
+    const huge = BigInt("115792089237316195423570985008687907853269984665640564039457584007913129639935"); // 2**256-1
+    // With 8 decimals, huge maps to ~1e69, still finite in JS (1e69 < 1e308) — should not throw, just large
+    const rHuge = quoteFromFeed({ answer: huge, decimals: 8, amountEth: null });
+    assert.equal(Number.isFinite(rHuge.priceUsd), true);
+    // huge amountEth * priceUsd overflow → Infinity → throw invalid quoteUsd
+    assert.throws(() => quoteFromFeed({ answer: 100000000000n, decimals: 8, amountEth: Number.MAX_VALUE }), /invalid quoteUsd/);
+    // Infinity decimals → throw
+    assert.throws(() => quoteFromFeed({ answer: 100n, decimals: Infinity as any, amountEth: null }), /invalid decimals/);
+  });
 });

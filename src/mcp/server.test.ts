@@ -90,4 +90,28 @@ describe("MCP server — stale tools (no live RPC for isStale/quote, mocked chec
     assert.equal(j.decision, "BLOCK");
     await client.close();
   });
+
+  it("huge and malformed inputs — fail closed", async () => {
+    const transport = new StdioClientTransport({
+      command: "npx",
+      args: ["tsx", "src/mcp/server.ts"],
+      cwd: process.cwd(),
+    });
+    const client = new Client({ name: "test", version: "1.0.0" });
+    await client.connect(transport);
+    const now = Math.floor(Date.now() / 1000);
+    // huge future timestamp via stale_isStale → BLOCK
+    const huge = await client.callTool({
+      name: "stale_isStale",
+      arguments: { updatedAt: String((BigInt(1) << BigInt(40)).toString()), nowSeconds: now, maxAgeSeconds: 60 },
+    });
+    assert.match((huge.content as any)[0].text as string, /BLOCK/);
+    // huge amountEth overflow via quote → isError
+    const badQuote = await client.callTool({
+      name: "stale_quote",
+      arguments: { answer: "100000000000", decimals: 8, amountEth: Number.MAX_VALUE },
+    });
+    assert.equal((badQuote as any).isError, true);
+    await client.close();
+  });
 });
