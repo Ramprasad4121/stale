@@ -102,4 +102,55 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
     assert.equal(r.allowExecute, false);
     assert.match(r.reason, /decimals/);
   });
+
+  it("malformed RPC and invalid feed — fail closed", async () => {
+    // invalid feed address → BLOCK before RPC
+    const rFeed = await checkPrice({
+      rpc: RPC,
+      feed: "0xbad",
+      maxAgeSeconds: 60,
+      nowSeconds: NOW,
+      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8 }),
+    });
+    assert.equal(rFeed.decision, "BLOCK");
+    assert.match(rFeed.reason, /invalid feed/);
+
+    // missing rpc → BLOCK
+    const rRpc = await checkPrice({
+      rpc: "",
+      feed: FEED,
+      maxAgeSeconds: 60,
+      nowSeconds: NOW,
+      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8 }),
+    });
+    assert.equal(rRpc.decision, "BLOCK");
+    assert.match(rRpc.reason, /missing rpc/);
+
+    // malformed readContract throws generic → BLOCK
+    const badClient = {
+      readContract: (async () => {
+        throw new Error("malformed response: unexpected tuple");
+      }) as unknown as PublicClient["readContract"],
+    };
+    const rMal = await checkPrice({
+      rpc: RPC,
+      feed: FEED,
+      maxAgeSeconds: 60,
+      nowSeconds: NOW,
+      __client: badClient,
+    });
+    assert.equal(rMal.decision, "BLOCK");
+    assert.match(rMal.reason, /failed to read/);
+
+    // invalid maxAge → BLOCK
+    const rPolicy = await checkPrice({
+      rpc: RPC,
+      feed: FEED,
+      maxAgeSeconds: NaN,
+      nowSeconds: NOW,
+      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8 }),
+    });
+    assert.equal(rPolicy.decision, "BLOCK");
+    assert.match(rPolicy.reason, /invalid maxAge/);
+  });
 });

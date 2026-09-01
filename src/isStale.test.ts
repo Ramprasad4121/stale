@@ -87,4 +87,24 @@ describe("isStale", () => {
     assert.equal(rHex.decision, "ALLOW");
     assert.equal(rHex.ageSeconds, 5);
   });
+
+  it("9. huge and edge values — fail closed on huge future, huge stale", () => {
+    // huge future timestamp (2**40) → BLOCK as not-yet-valid
+    const hugeFuture = BigInt(1) << BigInt(40); // 1099511627776
+    const rFuture = isStale({ updatedAt: hugeFuture, nowSeconds: now, maxAgeSeconds: 60 });
+    assert.equal(rFuture.decision, "BLOCK");
+    assert.equal(rFuture.ageSeconds! < 0, true);
+
+    // huge stale age (now far in future) → BLOCK
+    const rHugeStale = isStale({ updatedAt: now - 1, nowSeconds: Number.MAX_SAFE_INTEGER, maxAgeSeconds: 60 });
+    assert.equal(rHugeStale.decision, "BLOCK");
+    assert.equal(rHugeStale.ageSeconds! > 60, true);
+
+    // Infinity and NaN for updatedAt string → BLOCK
+    for (const v of ["Infinity", "NaN", "1e309"]) {
+      const r = isStale({ updatedAt: v, nowSeconds: now, maxAgeSeconds: 60 });
+      assert.equal(r.decision, "BLOCK");
+      assert.equal(r.ageSeconds, null);
+    }
+  });
 });
