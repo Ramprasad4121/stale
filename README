@@ -13,13 +13,17 @@ Quick Start
 * Install: npm install @ramprasad4121/stale
   npx stale --rpc $RPC_URL --maxAge 3600
   import { checkPrice } from "@ramprasad4121/stale"
+
 * Clone and install: git clone https://github.com/Ramprasad4121/stale.git && 
 cd stale && npm install  # secondary: local dev path
+
 * Or from GitHub: npm install github:Ramprasad4121/stale  # fallback before registry propagation
 * Run the guard: npx tsx src/cli.ts --rpc https://ethereum-rpc.publicnode.com 
 --maxAge 60 --amount 0.5 --json
+
 * From package: npx stale --rpc https://ethereum-rpc.publicnode.com --maxAge 60 
 --amount 0.5 --json  # bin stays `stale` / `stale-mcp`
+
 * Run the tests: npm test
 * Try the CRE simulation: cd cre && cre workflow simulate workflows/stale 
 --target staging-settings --non-interactive --trigger-index 0 
