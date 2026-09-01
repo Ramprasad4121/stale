@@ -39,10 +39,13 @@ act on fresh enough under the caller's `maxAgeSeconds` policy?
 - Do not assume `updatedAt` is always increasing, always recent, or always
   present. `updatedAt == 0` means no data yet → `BLOCK`.
 - Do not assume `answer` is always positive. `answer <= 0` → `BLOCK`.
-- Do not assume `startedAt`, `roundId`, or `answeredInRound` are needed for
-  freshness. `stale` deliberately checks only `updatedAt` (and `answer` for
-  sanity) to keep the contract small and auditable. Future policy (round
-  validation, heartbeat, deviation) belongs in `ROADMAP` Phase I/J, not in v1.
+- Round completeness (AggregatorV3): `latestRoundData` returns `roundId` and
+  `answeredInRound`. If `answeredInRound < roundId` the round is incomplete /
+  unanswered → `BLOCK` with `allowExecute:false` even if `updatedAt` looks
+  fresh. `stale` (Node `checkPrice` and CRE `onCron`) requires
+  `answeredInRound >= roundId` per
+  https://docs.chain.link/data-feeds/api-reference; `startedAt` is not used
+  for freshness. Remaining policy (heartbeat, deviation) stays in `ROADMAP`.
 - Proxy/aggregator behavior: the proxy forwards to the current aggregator.
   A stale proxy still returns whatever the aggregator last wrote. `stale`
   does not try to detect proxy upgrades — it checks the timestamp it actually

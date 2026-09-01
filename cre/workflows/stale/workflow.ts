@@ -75,8 +75,10 @@ export function onCron(runtime: Runtime<Config>, _payload: CronPayload): string 
   const evmClient = getEvmClient(cfg.chainName);
   const aggregator = new PriceFeedAggregator(evmClient, feed);
 
+  let roundId: bigint;
   let answer: bigint;
   let updatedAt: bigint;
+  let answeredInRound: bigint;
   let decimals: number;
   try {
     decimals = aggregator.decimals(runtime);
@@ -88,8 +90,10 @@ export function onCron(runtime: Runtime<Config>, _payload: CronPayload): string 
   try {
     const data = aggregator.latestRoundData(runtime);
     // latestRoundData returns [roundId, answer, startedAt, updatedAt, answeredInRound]
+    roundId = data[0];
     answer = data[1];
     updatedAt = data[3];
+    answeredInRound = data[4];
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return safeJsonStringify(buildBlockResult(feed, maxAgeSeconds, now, `failed to read latestRoundData — BLOCK: ${msg}`.slice(0, 200)));
@@ -107,6 +111,15 @@ export function onCron(runtime: Runtime<Config>, _payload: CronPayload): string 
   if (answer <= 0n) {
     return safeJsonStringify(
       buildBlockResult(feed, maxAgeSeconds, now, `answer is ${answer.toString()} (invalid price) — BLOCK`, {
+        answer: answer.toString(),
+        updatedAt: updatedAt.toString(),
+        ageSeconds: null,
+      }),
+    );
+  }
+  if (answeredInRound < roundId) {
+    return safeJsonStringify(
+      buildBlockResult(feed, maxAgeSeconds, now, `incomplete round: answeredInRound ${answeredInRound.toString()} < roundId ${roundId.toString()} (unanswered round) — BLOCK`, {
         answer: answer.toString(),
         updatedAt: updatedAt.toString(),
         ageSeconds: null,

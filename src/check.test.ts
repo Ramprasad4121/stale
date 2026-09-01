@@ -7,12 +7,12 @@ const FEED = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
 const RPC = "https://ethereum-rpc.publicnode.com";
 const NOW = 1_724_520_000;
 
-function mockClient(opts: { answer: bigint; updatedAt: bigint; decimals: number | bigint | Error }): Pick<PublicClient, "readContract"> {
+function mockClient(opts: { answer: bigint; updatedAt: bigint; decimals: number | bigint | Error; roundId?: bigint; answeredInRound?: bigint }): Pick<PublicClient, "readContract"> {
   return {
     readContract: (async ({ functionName }: { functionName: string }) => {
       if (functionName === "latestRoundData") {
         // (roundId, answer, startedAt, updatedAt, answeredInRound)
-        return [1n, opts.answer, 1n, opts.updatedAt, 1n] as const;
+        return [opts.roundId ?? 1n, opts.answer, 1n, opts.updatedAt, opts.answeredInRound ?? 1n] as const;
       }
       if (functionName === "decimals") {
         if (opts.decimals instanceof Error) throw opts.decimals;
@@ -101,6 +101,32 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
     assert.equal(r.decision, "BLOCK");
     assert.equal(r.allowExecute, false);
     assert.match(r.reason, /decimals/);
+  });
+
+  it("incomplete round BLOCK — answeredInRound < roundId with fresh updatedAt", async () => {
+    const r = await checkPrice({
+      rpc: RPC,
+      feed: FEED,
+      maxAgeSeconds: 60,
+      nowSeconds: NOW,
+      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, roundId: 2n, answeredInRound: 1n }),
+    });
+    assert.equal(r.decision, "BLOCK");
+    assert.equal(r.allowExecute, false);
+    assert.match(r.reason, /answeredInRound.*roundId|incomplete round/);
+  });
+
+  it("complete round fresh ALLOW — answeredInRound == roundId", async () => {
+    const r = await checkPrice({
+      rpc: RPC,
+      feed: FEED,
+      maxAgeSeconds: 60,
+      nowSeconds: NOW,
+      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, roundId: 5n, answeredInRound: 5n }),
+    });
+    assert.equal(r.decision, "ALLOW");
+    assert.equal(r.allowExecute, true);
+    assert.equal(r.ageSeconds, 10);
   });
 
   it("malformed RPC and invalid feed — fail closed", async () => {

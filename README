@@ -97,7 +97,7 @@ Enforce the official fields correctly:
 * latestRoundData: returns (roundId, answer, startedAt, updatedAt, 
 answeredInRound) — use updatedAt
 * decimals: via decimals() — never hardcode 8, fetched on-chain via viem
-* Fail closed: updatedAt == 0 → BLOCK, answer <= 0 → BLOCK, future → BLOCK
+* Fail closed: updatedAt == 0 → BLOCK, answer <= 0 → BLOCK, future → BLOCK, answeredInRound < roundId → BLOCK (incomplete/unanswered AggregatorV3 round — even fresh-looking updatedAt is BLOCK; require answeredInRound >= roundId per https://docs.chain.link/data-feeds/api-reference)
 * Feed: 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419 on ethereum-mainnet
 * Quote: priceUsd = Number(formatUnits(answer, decimals)), quoteUsd = 
 amountEth * priceUsd
