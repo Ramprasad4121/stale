@@ -120,7 +120,7 @@ updatedAt 0 BLOCK, answer <=0 BLOCK, decimals throw BLOCK, incomplete round BLOC
 * MCP tests: src/mcp/server.test.ts — 5 cases (lists 3 tools, stale_isStale, 
 stale_quote, stale_check, huge inputs)
 * No live RPC in tests — mocks viem readContract/getChainId and MCP stdio
-* CI: .github/workflows/test.yml — node 22, npm ci, npm test, npm run check:cre-sync, npm run typecheck, npm run build
+* CI: .github/workflows/test.yml — node 22, npm ci, npm test, npm run check:cre-sync, npm run typecheck, npm run build, npm run check:pack
 
 CRE Developer
 -------------

@@ -75,7 +75,7 @@ describe("isStale", () => {
     assert.equal(r.ageSeconds, null);
   });
 
-  it("8. bigint updatedAt works", () => {
+  it("9. bigint updatedAt works", () => {
     const rFresh = isStale({ updatedAt: BigInt(now - 5), nowSeconds: now, maxAgeSeconds: 60 });
     assert.equal(rFresh.decision, "ALLOW");
     assert.equal(rFresh.ageSeconds, 5);
@@ -94,7 +94,7 @@ describe("isStale", () => {
     assert.equal(rHex.ageSeconds, 5);
   });
 
-  it("9. huge and edge values — fail closed on huge future, huge stale", () => {
+  it("10. huge and edge values — fail closed on huge future, huge stale", () => {
     // huge future timestamp (2**40) → BLOCK as not-yet-valid
     const hugeFuture = BigInt(1) << BigInt(40); // 1099511627776
     const rFuture = isStale({ updatedAt: hugeFuture, nowSeconds: now, maxAgeSeconds: 60 });
