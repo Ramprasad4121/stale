@@ -162,6 +162,19 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
     assert.match(r.reason, /chainId mismatch/);
   });
 
+  it("getChainId throw → BLOCK", async () => {
+    const r = await checkPrice({
+      rpc: RPC,
+      feed: FEED,
+      maxAgeSeconds: 60,
+      nowSeconds: NOW,
+      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, chainId: new Error("chainId down") }),
+    });
+    assert.equal(r.decision, "BLOCK");
+    assert.equal(r.allowExecute, false);
+    assert.match(r.reason, /failed to get chainId/);
+  });
+
   it("malformed RPC and invalid feed — fail closed", async () => {
     // invalid feed address → BLOCK before RPC
     const rFeed = await checkPrice({

@@ -25,6 +25,7 @@
     "typecheck": "tsc --noEmit",
     "cli": "tsx src/cli.ts",
     "test": "tsx --test src/*.test.ts src/mcp/*.test.ts",
+    "check:cre-sync": "bash scripts/check-cre-sync.sh",
     "mcp": "tsx src/mcp/server.ts"
   },
   "dependencies": {

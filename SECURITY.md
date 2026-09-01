@@ -47,6 +47,7 @@ act on fresh enough under the caller's `maxAgeSeconds` policy?
   https://docs.chain.link/data-feeds/api-reference; `startedAt` is not used
   for freshness. Remaining policy (heartbeat, deviation) stays in `ROADMAP`.
 - Chain binding: default `ETH/USD` proxy `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` is Ethereum mainnet only. Node `checkPrice` calls `eth_chainId` (viem `getChainId`) after `createPublicClient({chain: mainnet})` and `BLOCK`s if `chainId !== 1` with `chainId mismatch` reason; mocks without `getChainId` skip the check.
+- Heartbeat: ETH/USD on mainnet updates roughly every 45–50 minutes (Chainlink heartbeat). `maxAgeSeconds` is caller policy — `maxAge 60` will `BLOCK` most of the time even when the DON is healthy. Staging `3600` vs production `60` in `cre/workflows/stale/config.*.json` is intentional (simulate `ALLOW` vs strict production); do not silently change production.
 - Proxy/aggregator behavior: the proxy forwards to the current aggregator.
   A stale proxy still returns whatever the aggregator last wrote. `stale`
   does not try to detect proxy upgrades — it checks the timestamp it actually
@@ -88,6 +89,9 @@ act on fresh enough under the caller's `maxAgeSeconds` policy?
   `amountEth` must be finite and `>= 0`; else `quoteFromFeed` throws and the
   caller gets `BLOCK`. `NaN`, `Infinity`, negative, or huge values are
   rejected. No overflow check beyond `Number.isFinite`.
+- `priceUsd` and `quoteUsd` are convenience display values in v1, not
+  settlement-grade amounts. They use `formatUnits` followed by JavaScript
+  `Number` arithmetic; exact decimal-string math is deferred to a later PR.
 
 ## Configuration risks
 
