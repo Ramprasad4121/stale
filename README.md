@@ -9,12 +9,14 @@ could let a stale price through.
 
 Install
 -------
+```
 npm install @ramprasad4121/stale
+```
 
 (or)
-
+```
 git clone https://github.com/Ramprasad4121/stale.git && cd stale && npm install # secondary: local dev path
-
+```
 
 Use
 ---
