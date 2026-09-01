@@ -1,7 +1,7 @@
 # Contributing to stale
 
 Guardrail for onchain agents — PRs only.
-Repo docs: `README`/`README.md`, `PROMPT.md`, `skill.md`.
+Repo docs: `README`, `PROMPT.md`.
 Package: `npm install @ramprasad4121/stale` — `import { isStale } from "@ramprasad4121/stale"`, `npx stale`, `npx stale-mcp`.
 
 - **PRs only, not direct to `main`** — `opencode-review` runs on PRs (`opened`, `synchronize`, `reopened`, `ready_for_review`). Push to a branch, open a PR against `main`.

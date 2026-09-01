@@ -12,11 +12,11 @@ Do this end-to-end, no questions:
     # CRE (optional, for simulate): cd cre && bun install && cd cre/workflows/stale && bun install && cd ../../..
 
 2. Understand the project — read in order:
-   README (note: now `README` not `README.md`), skill.md, CONTRIBUTING.md, src/isStale.ts, src/quote.ts, src/check.ts, src/cli.ts, src/index.ts, cre/README.md, cre/workflows/stale/workflow.ts, cre/workflows/stale/config.staging.json (maxAge 3600) vs config.production.json (60), .github/workflows/test.yml
+   README (note: now `README` not `README.md`), CONTRIBUTING.md, src/isStale.ts, src/quote.ts, src/check.ts, src/feeds.ts, src/cli.ts, src/index.ts, cre/README.md, cre/workflows/stale/workflow.ts, cre/workflows/stale/config.staging.json (maxAge 3600) vs config.production.json (60), .github/workflows/test.yml
    # installed package users: import { isStale } from "@ramprasad4121/stale"; npx stale --help; npx stale-mcp
 
 3. Mental model:
-   age = now - updatedAt (from PriceFeedAggregator.latestRoundData + decimals() via viem, never hardcoded 8). If age <0 or age > maxAge → BLOCK (fail closed: missing/0/negative/unparseable/RPC fail → BLOCK). One feed v1: ETH/USD 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419 on ethereum-mainnet. Quote: priceUsd=Number(formatUnits(answer,decimals)), quoteUsd=amountEth*priceUsd.
+   age = now - updatedAt (from PriceFeedAggregator.latestRoundData + decimals() via viem, never hardcoded 8). If age <0 or age > maxAge → BLOCK (fail closed: missing/0/negative/unparseable/RPC fail → BLOCK). Feed allowlist v2 (src/feeds.ts, Ethereum mainnet, default ETH/USD): ETH/USD 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419 and BTC/USD 0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c — unknown feed → BLOCK (unknown/unsupported feed). Quote: priceUsd=Number(formatUnits(answer,decimals)), quoteUsd=amountEth*priceUsd.
 
 4. Verify:
     npm test  # must pass (33: 10 isStale + 7 quote + 11 checkPrice + 5 MCP, mocked viem/MCP stdio, no live RPC) — run npm test for current count

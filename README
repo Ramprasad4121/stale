@@ -21,6 +21,7 @@ Use
 CLI:
 
 npx stale --rpc $RPC_URL --maxAge 3600
+npx stale --rpc $RPC_URL --maxAge 60 --feed 0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c --amount 0.5
 
 Library:
 
@@ -37,7 +38,7 @@ Library:
     }
 
 --rpc and --maxAge are required.
-Optional: --amount 0.5   --json
+Optional: --amount 0.5  --feed <allowlisted proxy>  --json
 Exit 0 = ALLOW. Exit 1 = BLOCK.
 
 Supported feeds (Ethereum mainnet, default ETH/USD): ETH/USD
@@ -52,7 +53,7 @@ What BLOCK means
 ----------------
 Do not act. Reasons include: stale or future timestamp, updatedAt == 0,
 answer <= 0, incomplete round (answeredInRound < roundId), wrong chainId
-for the default feed, bad RPC, or invalid input.
+for the feed, unknown feed, bad RPC, or invalid input.
 
 Source: https://docs.chain.link/data-feeds/api-reference
 

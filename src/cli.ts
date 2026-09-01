@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
 import { checkPrice } from "./check.js";
+import { DEFAULT_FEED, lookupFeed } from "./feeds.js";
 
-const DEFAULT_FEED = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419"; // ETH/USD Ethereum mainnet — https://docs.chain.link/data-feeds/price-feeds/addresses#ethereum-mainnet
 // allowExecute is permission (true only if decision ALLOW), not an execution call; execute line stays dry-run {"action":"none"}
 
 function truncate(s: string, n = 200): string {
@@ -78,6 +78,10 @@ async function main(): Promise<void> {
   const feed = values.feed ?? DEFAULT_FEED;
   if (!/^0x[a-fA-F0-9]{40}$/.test(feed)) {
     console.log(truncate(`BLOCK — invalid --feed "${feed}" — BLOCK`));
+    process.exit(1);
+  }
+  if (!lookupFeed(feed)) {
+    console.log(truncate(`BLOCK — unknown/unsupported feed "${feed}" — BLOCK`));
     process.exit(1);
   }
 

@@ -66,7 +66,7 @@ server.registerTool(
 server.registerTool(
   "stale_check",
   {
-    description: "Full guardrail: viem latestRoundData + decimals → isStale → quote. No wallet, no tx, fail closed. Returns same JSON as CLI --json with allowExecute.",
+    description: "Full guardrail: viem latestRoundData + decimals → isStale → quote. No wallet, no tx, fail closed. Returns same JSON as CLI --json with allowExecute. Default feed is ETH/USD mainnet; an optional feed must be allowlisted: ETH/USD 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419 or BTC/USD 0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c on Ethereum mainnet. Unknown feed → BLOCK.",
     inputSchema: z.object({
       rpc: z.string().describe("Ethereum RPC URL (e.g. https://ethereum-rpc.publicnode.com)"),
       feed: z.string().describe("Data Feed proxy address, e.g. 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419"),

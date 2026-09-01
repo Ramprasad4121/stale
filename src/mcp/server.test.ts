@@ -66,7 +66,7 @@ describe("MCP server — stale tools (no live RPC for isStale/quote, mocked chec
     await client.close();
   });
 
-  it("stale_check — fail closed on invalid feed (no live RPC)", async () => {
+  it("stale_check — unknown feed not allowlisted → BLOCK (no live RPC)", async () => {
     const transport = new StdioClientTransport({
       command: "npx",
       args: ["tsx", "src/mcp/server.ts"],
@@ -84,10 +84,10 @@ describe("MCP server — stale tools (no live RPC for isStale/quote, mocked chec
     });
     const text = (r.content as any)[0].text as string;
     const j = JSON.parse(text);
-    // invalid feed is caught before RPC, still BLOCK, no live call needed for this path
-    // For this dummy zero address, the feed is valid format but will try RPC and may 429; we check that it still returns BLOCK with allowExecute false
-    assert.equal(j.allowExecute, false);
+    // unknown feed fails closed on the allowlist before any RPC call
     assert.equal(j.decision, "BLOCK");
+    assert.equal(j.allowExecute, false);
+    assert.match(j.reason, /unknown\/unsupported feed/);
     await client.close();
   });
 
