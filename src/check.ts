@@ -19,7 +19,7 @@ export type CheckPriceInput = {
   amountEth?: number | null;
   nowSeconds?: number;
   /** @internal inject mock client for tests (no live RPC) — viem-compatible */
-  __client?: Pick<PublicClient, "readContract">;
+  __client?: Pick<PublicClient, "readContract"> & { getChainId?: PublicClient["getChainId"] };
 };
 
 export type CheckPriceResult = {
@@ -89,6 +89,24 @@ export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResu
       chain: mainnet,
       transport: http(rpc),
     });
+
+  // Chain binding: default mainnet ETH/USD proxy must be on chainId 1
+  // Skip getChainId when __client is injected and mock does not implement it (existing tests)
+  const DEFAULT_FEED = "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419";
+  if (feed.toLowerCase() === DEFAULT_FEED) {
+    const maybeGetChainId = (client as unknown as { getChainId?: () => Promise<number> }).getChainId;
+    if (typeof maybeGetChainId === "function") {
+      try {
+        const chainId = await maybeGetChainId.call(client);
+        if (chainId !== 1) {
+          return blockResult(input, `chainId mismatch: feed ${feed} is Ethereum mainnet (chainId 1) but rpc returned chainId ${String(chainId)} — BLOCK`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return blockResult(input, `failed to get chainId — BLOCK (fail closed): ${msg}`);
+      }
+    }
+  }
 
   // Parallel reads — viem batches `eth_call` at end of tick (public client docs)
   let roundId: bigint;
