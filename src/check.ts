@@ -91,8 +91,10 @@ export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResu
     });
 
   // Parallel reads — viem batches `eth_call` at end of tick (public client docs)
+  let roundId: bigint;
   let answer: bigint;
   let updatedAt: bigint;
+  let answeredInRound: bigint;
   let decimals: number;
 
   try {
@@ -110,8 +112,10 @@ export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResu
     ]);
 
     const data = roundData as readonly [bigint, bigint, bigint, bigint, bigint];
+    roundId = data[0];
     answer = data[1];
     updatedAt = data[3];
+    answeredInRound = data[4];
 
     const d = dec as number | bigint;
     decimals = typeof d === "bigint" ? Number(d) : d;
@@ -128,6 +132,13 @@ export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResu
     }
     if (answer <= 0n) {
       return blockResult(input, `answer is ${answer.toString()} (invalid price) from ${feed} — BLOCK`, {
+        answer: answer.toString(),
+        updatedAt: updatedAt.toString(),
+        ageSeconds: null,
+      });
+    }
+    if (answeredInRound < roundId) {
+      return blockResult(input, `incomplete round: answeredInRound ${answeredInRound.toString()} < roundId ${roundId.toString()} (unanswered round) from ${feed} — BLOCK`, {
         answer: answer.toString(),
         updatedAt: updatedAt.toString(),
         ageSeconds: null,
