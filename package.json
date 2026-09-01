@@ -30,7 +30,6 @@
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
-    "stale": "file:stale-0.1.0.tgz",
     "viem": "^2.21.0",
     "zod": "^4.0.0"
   },
