@@ -16,14 +16,21 @@ act on fresh enough under the caller's `maxAgeSeconds` policy?
 
 ## Trust boundaries
 
-- **Trusted:** Chainlink Data Feed proxy at the configured `feed` address,
-  `PriceFeedAggregator` `latestRoundData()` and `decimals()` as deployed on
-  `ethereum-mainnet` (or the configured chain), the `viem` `PublicClient`
-  `eth_call` path, and the local clock (`nowSeconds`).
+- **Trusted:** Chainlink Data Feed proxies on the allowlist in `src/feeds.ts`
+  (ETH/USD and BTC/USD, Ethereum mainnet only), their
+  `PriceFeedAggregator` `latestRoundData()` and `decimals()`, the `viem`
+  `PublicClient` `eth_call` path, and the local clock (`nowSeconds`).
 - **Untrusted:** RPC responses, `updatedAt`, `answer`, `decimals`, `feed`
   address strings, `maxAgeSeconds`, `amountEth`, and any human or agent that
   calls `checkPrice` with a permissive policy. All are validated and fail
   closed.
+- **Feed allowlist:** only ETH/USD `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419`
+  and BTC/USD `0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c` on Ethereum
+  mainnet are supported (source:
+  https://docs.chain.link/data-feeds/price-feeds/addresses#ethereum-mainnet).
+  `checkPrice` fails closed on any valid-format address not in the registry
+  (`unknown/unsupported feed`). Adding a feed is a registry change with
+  tests and this doc updated.
 
 ## Chainlink assumptions
 
@@ -46,7 +53,7 @@ act on fresh enough under the caller's `maxAgeSeconds` policy?
   `answeredInRound >= roundId` per
   https://docs.chain.link/data-feeds/api-reference; `startedAt` is not used
   for freshness. Remaining policy (heartbeat, deviation) stays in `ROADMAP`.
-- Chain binding: default `ETH/USD` proxy `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` is Ethereum mainnet only. Node `checkPrice` calls `eth_chainId` (viem `getChainId`) after `createPublicClient({chain: mainnet})` and `BLOCK`s if `chainId !== 1` with `chainId mismatch` reason; mocks without `getChainId` skip the check.
+- Chain binding: every allowlisted feed (ETH/USD `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419`, BTC/USD `0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c`) is Ethereum mainnet only via chainId 1 in the registry. Node `checkPrice` calls `eth_chainId` (viem `getChainId`) after `createPublicClient({chain: mainnet})` and `BLOCK`s if `chainId !== 1` with `chainId mismatch` reason; mocks without `getChainId` skip the check.
 - Heartbeat: ETH/USD on mainnet updates roughly every 45–50 minutes (Chainlink heartbeat). `maxAgeSeconds` is caller policy — `maxAge 60` will `BLOCK` most of the time even when the DON is healthy. Staging `3600` vs production `60` in `cre/workflows/stale/config.*.json` is intentional (simulate `ALLOW` vs strict production); do not silently change production.
 - Proxy/aggregator behavior: the proxy forwards to the current aggregator.
   A stale proxy still returns whatever the aggregator last wrote. `stale`
@@ -99,10 +106,11 @@ act on fresh enough under the caller's `maxAgeSeconds` policy?
   `maxAgeSeconds` (e.g. `86400`) will `ALLOW` a price that is a day old.
   Staging is `3600` so a local `cre workflow simulate` can `ALLOW` (on-chain
   age is ~2800s); production stays `60`. Document your policy and test it.
-- `feed` must be `0x` + 40 hex. An attacker-controlled `feed` can return any
-  `answer`/`updatedAt`. `stale` validates the address format but does not
-  verify that the address is the *intended* feed. The caller must pin the
-  correct proxy per chain and not accept `feed` from untrusted input.
+- `feed` must be `0x` + 40 hex and must be on the allowlist
+  (ETH/USD or BTC/USD mainnet from `src/feeds.ts`). An attacker-controlled
+  `feed` can return any `answer`/`updatedAt`; `stale` fails closed on any
+  address not in the allowlist, so callers can only pass official proxies.
+  Do not accept `feed` from untrusted input.
 - `amountEth` is human units. A large `amountEth` with a stale `priceUsd`
   still `BLOCK`s, but a large `quoteUsd` that is then used for economics
   without further checks can cause loss. `stale` only gates freshness.
@@ -177,9 +185,9 @@ failure into `ALLOW`.
   `cre/workflows/stale/package.json` (separate lockfile).
 - Avoid floating `@latest` in security-sensitive paths. `package-lock.json`
   and `cre/bun.lock` / `cre/workflows/stale/bun.lock` pin exact versions.
-- Published package (`files: ["dist", "README", "README.md", "LICENSE"]`) contains only
-  `dist/` JS/d.ts/maps, `README`, `README.md`, `LICENSE`, and `package.json` (verified via
-  `npm pack --dry-run` → 28 files, 18.3 kB). No `src/*.test.ts`, `AGENTS.md`,
+- Published package (`files: ["dist", "README.md", "LICENSE"]`) contains only
+  `dist/` JS/d.ts/maps, `README.md`, `LICENSE`, and `package.json` (verified via
+  `npm pack --dry-run`). No `src/*.test.ts`, `AGENTS.md`,
   `LINUS.md`, `.env`, `node_modules`, or `cre` build artifacts.
 
 ## Fail-closed semantics

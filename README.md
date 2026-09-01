@@ -39,6 +39,9 @@ Library:
       // do not act
     }
 
+Programmatic allowlist check: lookupFeed("0x...") returns the feed entry or
+null for unknown proxies. FEEDS (list) and DEFAULT_FEED are also exported.
+
 --rpc and --maxAge are required.
 Optional: --amount 0.5  --feed <allowlisted proxy>  --json
 Exit 0 = ALLOW. Exit 1 = BLOCK.

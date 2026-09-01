@@ -22,7 +22,7 @@ Usage: stale --rpc <url> --maxAge <seconds> [--feed <address>] [--amount <eth>] 
 
 Examples:
   stale --rpc https://ethereum-rpc.publicnode.com --maxAge 3600
-  stale --rpc $RPC_URL --maxAge 60 --amount 0.5
+  stale --rpc $RPC_URL --maxAge 60 --feed 0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c --amount 0.5
   stale --rpc $RPC_URL --maxAge 60 --amount 0.5 --json
 `);
 }
