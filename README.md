@@ -22,12 +22,12 @@ Use
 ---
 CLI:
 
-npx stale --rpc $RPC_URL --maxAge 3600
-npx stale --rpc $RPC_URL --maxAge 60 --feed 0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c --amount 0.5
+npx stale --rpc https://ethereum-rpc.publicnode.com --maxAge 3600
+npx stale --rpc $RPC_URL --maxAge 3600 --feed 0xF4030086522aB5EEa4988CAabD718A351cF97BeE88c
 
 Library:
 
-    import { checkPrice } from "@ramprasad4121/stale";
+    import { isStale, quoteFromFeed, checkPrice } from "@ramprasad4121/stale";
 
     const r = await checkPrice({
       rpc: process.env.RPC_URL,
