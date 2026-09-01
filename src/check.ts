@@ -2,6 +2,7 @@ import { createPublicClient, http, parseAbi, type PublicClient } from "viem";
 import { mainnet } from "viem/chains";
 import { isStale } from "./isStale.js";
 import { quoteFromFeed } from "./quote.js";
+import { lookupFeed } from "./feeds.js";
 
 /**
  * Official Data Feed ABI — only `decimals` and `latestRoundData` per
@@ -11,8 +12,6 @@ const feedAbi = parseAbi([
   "function decimals() view returns (uint8)",
   "function latestRoundData() view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)",
 ] as const);
-
-const DEFAULT_FEED = "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419";
 
 export type CheckPriceInput = {
   rpc: string;
@@ -78,6 +77,11 @@ export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResu
   if (!/^0x[a-fA-F0-9]{40}$/.test(feed)) {
     return blockResult(input, `invalid feed ${feed} — BLOCK`);
   }
+
+  const feedEntry = lookupFeed(feed);
+  if (!feedEntry) {
+    return blockResult(input, `unknown/unsupported feed ${feed} — BLOCK`);
+  }
   if (!Number.isFinite(maxAgeSeconds) || !Number.isInteger(maxAgeSeconds) || maxAgeSeconds < 0) {
     return blockResult(input, `invalid maxAgeSeconds ${String(maxAgeSeconds)} — BLOCK`);
   }
@@ -92,20 +96,18 @@ export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResu
       transport: http(rpc),
     });
 
-  // Chain binding: default mainnet ETH/USD proxy must be on chainId 1
+  // Chain binding: registry entry's chainId must match RPC chainId
   // Skip getChainId when __client is injected and mock does not implement it (existing tests)
-  if (feed.toLowerCase() === DEFAULT_FEED) {
-    const maybeGetChainId = (client as unknown as { getChainId?: () => Promise<number> }).getChainId;
-    if (typeof maybeGetChainId === "function") {
-      try {
-        const chainId = await maybeGetChainId.call(client);
-        if (chainId !== 1) {
-          return blockResult(input, `chainId mismatch: feed ${feed} is Ethereum mainnet (chainId 1) but rpc returned chainId ${String(chainId)} — BLOCK`);
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return blockResult(input, `failed to get chainId — BLOCK (fail closed): ${msg}`);
+  const maybeGetChainId = (client as unknown as { getChainId?: () => Promise<number> }).getChainId;
+  if (typeof maybeGetChainId === "function") {
+    try {
+      const chainId = await maybeGetChainId.call(client);
+      if (chainId !== feedEntry.chainId) {
+        return blockResult(input, `chainId mismatch: feed ${feed} is chainId ${feedEntry.chainId} but rpc returned chainId ${String(chainId)} — BLOCK`);
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return blockResult(input, `failed to get chainId — BLOCK (fail closed): ${msg}`);
     }
   }
 

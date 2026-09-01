@@ -8,6 +8,7 @@ Package: `npm install @ramprasad4121/stale` — `import { isStale } from "@rampr
 - **Tests must stay green** — `npm test` (33: 10 isStale + 7 quote + 11 checkPrice + 5 MCP in `src/*.test.ts` + `src/mcp/*.test.ts`, run `npm test` for current count) must pass. No live RPC in tests (mock `viem` `readContract`/`getChainId` and MCP `stdio`).
 - **No secrets** — no private keys, wallet, `.env`, or `AGENTS.md`/`LINUS.md` in git (both are `.gitignore` local-only).
 - **Official Chainlink fields only, fail closed** — `latestRoundData` + `decimals()` (don’t hardcode decimals), `updatedAt == 0` / `answer <= 0` / missing / stale / future → `BLOCK`. See `isStale`, `quoteFromFeed`, `checkPrice`.
+- **Feed allowlist** — v2 starts with an allowlist; only ETH/USD is listed (`src/feeds.ts`). Unknown or unsupported feed addresses → `BLOCK`.
 - **CRE simulation** — from `cre/`:
   ```bash
   cre workflow simulate workflows/stale --target staging-settings --non-interactive --trigger-index 0 --allow-insecure-rpc
