@@ -18,6 +18,7 @@ jobs:
           persist-credentials: false
 
       - uses: anomalyco/opencode/github@latest
+        if: github.actor != 'dependabot[bot]'
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

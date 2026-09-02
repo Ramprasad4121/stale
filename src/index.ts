@@ -72,3 +72,14 @@ export {
   type CheckTokenTaxInput,
   type HoneypotGuardrailResult,
 } from "./honeypot.js";
+export {
+  checkPriceDeviation,
+  type CheckPriceDeviationInput,
+  type DeviationGuardrailResult,
+} from "./deviation.js";
+export {
+  checkDeadline,
+  type CheckDeadlineInput,
+  type DeadlineGuardrailResult,
+} from "./deadline.js";
+export { AddressBook, type AddressBookConfig, type AddressBookResult } from "./addressbook.js";
