@@ -84,3 +84,101 @@ export function checkApproval(input: CheckApprovalInput): AllowanceGuardrailResu
     allowExecute: true,
   };
 }
+
+import { createPublicClient, http, parseAbi, type PublicClient } from "viem";
+import { mainnet } from "viem/chains";
+
+const allowanceAbi = parseAbi([
+  "function allowance(address owner, address spender) view returns (uint256)",
+] as const);
+
+export type CheckAllowanceInput = {
+  rpc: string;
+  token: string;
+  owner: string;
+  spender: string;
+  requiredAmount: bigint;
+  /** @internal inject mock client for tests */
+  __client?: Pick<PublicClient, "readContract">;
+};
+
+/**
+ * Validates that an agent has granted sufficient ERC20 allowance to a spender
+ * *before* attempting a transaction that requires it.
+ * Prevents transaction reverts and wasted gas.
+ */
+export async function checkAllowance(
+  input: CheckAllowanceInput,
+): Promise<AllowanceGuardrailResult> {
+  const { rpc, token, owner, spender, requiredAmount } = input;
+
+  if (typeof requiredAmount !== "bigint" || requiredAmount < 0n) {
+    return {
+      decision: "BLOCK",
+      reason: "invalid requiredAmount — BLOCK (fail closed)",
+      allowExecute: false,
+    };
+  }
+  if (!/^0x[a-fA-F0-9]{40}$/.test(token)) {
+    return {
+      decision: "BLOCK",
+      reason: `invalid token address ${token} — BLOCK`,
+      allowExecute: false,
+    };
+  }
+  if (!/^0x[a-fA-F0-9]{40}$/.test(owner)) {
+    return {
+      decision: "BLOCK",
+      reason: `invalid owner address ${owner} — BLOCK`,
+      allowExecute: false,
+    };
+  }
+  if (!/^0x[a-fA-F0-9]{40}$/.test(spender)) {
+    return {
+      decision: "BLOCK",
+      reason: `invalid spender address ${spender} — BLOCK`,
+      allowExecute: false,
+    };
+  }
+  if (typeof rpc !== "string" || rpc.trim() === "") {
+    return { decision: "BLOCK", reason: "missing rpc — BLOCK (fail closed)", allowExecute: false };
+  }
+
+  const client =
+    input.__client ??
+    createPublicClient({
+      chain: mainnet,
+      transport: http(rpc),
+    });
+
+  let currentAllowance: bigint;
+  try {
+    currentAllowance = await client.readContract({
+      address: token as `0x${string}`,
+      abi: allowanceAbi,
+      functionName: "allowance",
+      args: [owner as `0x${string}`, spender as `0x${string}`],
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      decision: "BLOCK",
+      reason: `failed to read allowance — BLOCK (fail closed): ${msg}`,
+      allowExecute: false,
+    };
+  }
+
+  if (currentAllowance < requiredAmount) {
+    return {
+      decision: "BLOCK",
+      reason: `insufficient allowance: owner ${owner} has only approved ${currentAllowance.toString()} < required ${requiredAmount.toString()} for spender ${spender} — BLOCK`,
+      allowExecute: false,
+    };
+  }
+
+  return {
+    decision: "ALLOW",
+    reason: `allowance strictly meets required amount`,
+    allowExecute: true,
+  };
+}
