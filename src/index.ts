@@ -51,3 +51,10 @@ export {
   type CheckNonceInput,
   type NetworkGuardrailResult,
 } from "./network.js";
+export {
+  RateLimiter,
+  SpendingCap,
+  type RateLimiterConfig,
+  type SpendingCapConfig,
+  type RateLimitResult,
+} from "./ratelimit.js";
