@@ -15,10 +15,20 @@ function mockClient(opts: {
   roundId?: bigint;
   answeredInRound?: bigint;
   chainId?: number | Error;
+  seqAnswer?: bigint;
+  seqStartedAt?: bigint;
 }): Pick<PublicClient, "readContract"> & { getChainId?: PublicClient["getChainId"] } {
   const client: Pick<PublicClient, "readContract"> & { getChainId?: PublicClient["getChainId"] } = {
-    readContract: (async ({ functionName }: { functionName: string }) => {
+    readContract: (async ({ address, functionName }: { address: string; functionName: string }) => {
       if (functionName === "latestRoundData") {
+        if (
+          address === "0xFdB631F5EE196F0ed6FAa767959853A9F217697D" ||
+          address === "0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389" ||
+          address === "0xBCF85224fc0756B9Fa45aA7892530B47e10b6433"
+        ) {
+          return [1n, opts.seqAnswer ?? 0n, opts.seqStartedAt ?? 1n, 1n, 1n] as const;
+        }
+
         // (roundId, answer, startedAt, updatedAt, answeredInRound)
         return [
           opts.roundId ?? 1n,
@@ -318,5 +328,60 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
     });
     assert.equal(rPolicy.decision, "BLOCK");
     assert.match(rPolicy.reason, /invalid maxAge/);
+  });
+
+  it("sequencer DOWN -> BLOCK", async () => {
+    const r = await checkPrice({
+      rpc: RPC,
+      feed: "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612", // Arbitrum ETH/USD
+      maxAgeSeconds: 60,
+      nowSeconds: NOW,
+      __client: mockClient({
+        answer: 300000000000n,
+        updatedAt: BigInt(NOW - 10),
+        decimals: 8,
+        chainId: 42161,
+        seqAnswer: 1n, // DOWN
+      }),
+    });
+    assert.equal(r.decision, "BLOCK");
+    assert.match(r.reason, /L2 Sequencer is DOWN/);
+  });
+
+  it("sequencer GRACE PERIOD -> BLOCK", async () => {
+    const r = await checkPrice({
+      rpc: RPC,
+      feed: "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612", // Arbitrum ETH/USD
+      maxAgeSeconds: 60,
+      nowSeconds: NOW,
+      __client: mockClient({
+        answer: 300000000000n,
+        updatedAt: BigInt(NOW - 10),
+        decimals: 8,
+        chainId: 42161,
+        seqAnswer: 0n, // UP
+        seqStartedAt: BigInt(NOW - 100), // 100s ago (< 3600s grace period)
+      }),
+    });
+    assert.equal(r.decision, "BLOCK");
+    assert.match(r.reason, /grace period/);
+  });
+
+  it("sequencer UP and past grace period -> ALLOW", async () => {
+    const r = await checkPrice({
+      rpc: RPC,
+      feed: "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612", // Arbitrum ETH/USD
+      maxAgeSeconds: 60,
+      nowSeconds: NOW,
+      __client: mockClient({
+        answer: 300000000000n,
+        updatedAt: BigInt(NOW - 10),
+        decimals: 8,
+        chainId: 42161,
+        seqAnswer: 0n, // UP
+        seqStartedAt: BigInt(NOW - 4000), // 4000s ago (> 3600s grace period)
+      }),
+    });
+    assert.equal(r.decision, "ALLOW");
   });
 });
