@@ -14,3 +14,8 @@ export {
 } from "./dex.js";
 export { lookupFeed } from "./feeds.js";
 export { calculateMinAmountOut, type CalculateMinAmountOutInput } from "./slippage.js";
+export {
+  checkApproval,
+  type CheckApprovalInput,
+  type AllowanceGuardrailResult,
+} from "./allowance.js";
