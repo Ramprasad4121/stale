@@ -1,7 +1,4 @@
-name: CI
-
-permissions:
-  contents: read
+name: Rust CI
 
 on:
   push:
@@ -13,44 +10,29 @@ permissions:
   contents: read
 
 jobs:
-  build-and-test:
+  test:
+    name: Build & Test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: 24
-          cache: "npm"
+          components: rustfmt, clippy
 
-      - name: Install Dependencies
-        run: npm ci
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Check Formatting
-        run: npm run format:check
+        run: cargo fmt --all -- --check
 
-      - name: Lint Code
-        run: npm run lint
+      - name: Clippy Linter
+        run: cargo clippy --all-targets -- -D warnings
 
-      - name: Type Check
-        run: npm run typecheck
+      - name: Run Tests
+        run: cargo test --all-targets
 
-      - name: Run Tests & Coverage
-        run: npm run test:coverage
-  changeset:
-    name: Check Changesets
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - name: Install dependencies
-        run: npm ci
-      - name: Check changeset
-        run: npx changeset status --since=origin/main
+      - name: Verify Packaging
+        run: cargo package

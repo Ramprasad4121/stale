@@ -1,0 +1,64 @@
+use crate::rpc::EvmRpcClient;
+use async_trait::async_trait;
+use std::sync::Arc;
+
+pub type CallHandler = Arc<dyn Fn(&str, &str) -> Result<String, String> + Send + Sync>;
+
+#[derive(Default, Clone)]
+pub struct MockRpcClient {
+    pub call_handler: Option<CallHandler>,
+    pub block_number: Option<u64>,
+    pub block_timestamp: Option<u64>,
+    pub chain_id: Option<u64>,
+    pub nonce: Option<u64>,
+    pub gas_price: Option<u128>,
+    pub balance: Option<u128>,
+    pub code: Option<String>,
+}
+
+#[async_trait]
+impl EvmRpcClient for MockRpcClient {
+    async fn call(&self, to: &str, data: &str) -> Result<String, String> {
+        if let Some(ref handler) = self.call_handler {
+            handler(to, data)
+        } else {
+            Err("mock call handler not configured".to_string())
+        }
+    }
+
+    async fn get_block_number(&self) -> Result<u64, String> {
+        self.block_number
+            .ok_or_else(|| "mock block_number not configured".to_string())
+    }
+
+    async fn get_block_timestamp(&self) -> Result<u64, String> {
+        self.block_timestamp
+            .ok_or_else(|| "mock block_timestamp not configured".to_string())
+    }
+
+    async fn get_chain_id(&self) -> Result<u64, String> {
+        self.chain_id
+            .ok_or_else(|| "mock chain_id not configured".to_string())
+    }
+
+    async fn get_transaction_count(&self, _address: &str) -> Result<u64, String> {
+        self.nonce
+            .ok_or_else(|| "mock nonce not configured".to_string())
+    }
+
+    async fn get_gas_price(&self) -> Result<u128, String> {
+        self.gas_price
+            .ok_or_else(|| "mock gas_price not configured".to_string())
+    }
+
+    async fn get_balance(&self, _address: &str) -> Result<u128, String> {
+        self.balance
+            .ok_or_else(|| "mock balance not configured".to_string())
+    }
+
+    async fn get_code(&self, _address: &str) -> Result<String, String> {
+        self.code
+            .clone()
+            .ok_or_else(|| "mock code not configured".to_string())
+    }
+}

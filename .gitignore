@@ -1,6 +1,5 @@
-shit/
-node_modules/
-dist/
-.env
-.gstack/
-coverage/
+target/
+Cargo.lock
+**/*.rs.bk
+*.swp
+.DS_Store

@@ -1,41 +1,59 @@
-# `stale` Architecture
+# `stale` Rust Architecture & Threat Model
 
-## Overview
+`stale` is built from first principles in 100% safe, modern Rust to serve as the uncompromised fail-closed security backbone for autonomous onchain AI agents.
 
-The `stale` project serves as a crucial guardrail for on-chain AI agents. Its primary goal is to verify that Chainlink Data Feed prices are fresh and valid before an agent takes any action. It provides a programmatic library, a CLI tool, and a Model Context Protocol (MCP) server, allowing Large Language Model (LLM) agents to safely verify oracle data without requiring transaction execution capabilities.
+## Core Philosophy: Strict Fail-Closed
 
-## Architecture Philosophy: Strict Fail-Closed
+In autonomous DeFi systems, any error, timeout, RPC failure, or malformed payload MUST be treated as an existential security event.
 
-The central tenet of the `stale` architecture is a **strict fail-closed** model. If any step in the price fetching or validation process is incomplete, invalid, or unavailable, the system defaults to returning a `BLOCK` decision.
+`stale` adheres to strict mathematical rules:
+1. If an RPC call returns an error, times out, or fails to parse -> `BLOCK`.
+2. If an oracle price is zero, negative, unparseable, or older than `max_age_seconds` -> `BLOCK`.
+3. If an L2 sequencer reports down or is within its 3600-second restart grace period -> `BLOCK`.
+4. If a target contract address is an EOA (no bytecode) -> `BLOCK`.
+5. If an approval requests infinite allowance (`type(uint256).max`) -> `BLOCK`.
+6. If an asset transfer simulation reverts -> `BLOCK` (flagged as honeypot).
 
-Key fail-closed mechanisms include:
+## Module Layout
 
-- **Timestamp Validation:** If `updatedAt` is missing, unparseable, `0n`, or in the future (indicating clock skew or spoofing), it fails closed.
-- **Data Integrity:** Negative or zero prices (`answer <= 0n`) and incomplete rounds (`answeredInRound < roundId`) immediately trigger a `BLOCK`.
-- **Feed Allowlist:** Queries to unknown or unsupported proxy addresses fail closed to prevent agents from being tricked into querying malicious contracts.
-- **Chain Validation:** RPC responses are cross-checked against the expected `chainId` for the requested data feed.
+```
+src/
+├── lib.rs          # Root exports and prelude
+├── types.rs        # Decision, GuardrailResult, AuditEntry
+├── is_stale.rs     # Pure offline staleness logic
+├── quote.rs        # Arbitrary-precision decimal quote math
+├── feeds.rs        # Static Chainlink Feed Registry (Mainnet, L2s)
+├── rpc.rs          # JSON-RPC 2.0 client & EvmRpcClient trait
+├── mock.rs         # MockRpcClient for zero-network testing
+├── abi.rs          # Zero-dependency ABI encoding/decoding
+├── sequencer.rs    # L2 Sequencer Uptime Feed guardrail
+├── dex.rs          # Uniswap V2/V3 liquidity depth guards
+├── slippage.rs     # Dynamic slippage calculation
+├── allowance.rs    # Strict approvals & on-chain allowance checks
+├── gas.rs          # Network gas price spike circuit breaker
+├── solvency.rs     # Native & ERC20 balance verification
+├── pausable.rs     # Protocol pause state guardrail
+├── simulate.rs     # Pre-flight eth_call transaction simulation
+├── sanctions.rs    # Chainlink OFAC Sanctions Oracle verification
+├── mev.rs          # MEV-protected private RPC enforcement
+├── contract.rs     # Bytecode verification against EOA phishing
+├── network.rs      # RPC sync, chain ID, and nonce desync checks
+├── ratelimit.rs    # RateLimiter & SpendingCap sliding windows
+├── audit.rs        # Structured JSON compliance logger
+├── pipeline.rs     # Composable GuardPipeline with fail-fast execution
+├── honeypot.rs     # Token transfer tax / honeypot detection
+├── deviation.rs    # Multi-oracle price deviation guard
+├── deadline.rs     # Swap intent deadline validation
+├── addressbook.rs  # Strict contract allowlist
+└── check.rs        # End-to-end Chainlink price feed checking
 
-This approach guarantees that an `ALLOW` decision is only issued when all preconditions—correct chain, valid data, and fresh timestamps—have been fully met.
+bin/
+├── stale.rs        # CLI tool
+└── stale_mcp.rs    # Model Context Protocol (MCP) server
+```
 
-## Interaction with Chainlink Data Feeds via `viem`
+## Zero-Network Testing Pattern
 
-`stale` interfaces with Chainlink Data Feeds using `viem` as its Ethereum interaction library.
-
-- **Read-Only:** The interaction strictly uses `client.readContract`. There is no wallet integration, private key management, or transaction signing capability in the system, eliminating the risk of accidental state mutations.
-- **Data Fetched:** The guardrail leverages the official Chainlink Data Feed ABI to fetch two key pieces of data:
-  - `decimals()`
-  - `latestRoundData()` (which returns `roundId`, `answer`, `startedAt`, `updatedAt`, and `answeredInRound`)
-- **Parallel Execution:** It executes parallel reads using `Promise.all` for efficiency, taking advantage of `viem`'s built-in `eth_call` batching capabilities at the end of the tick.
-
-## LLM Agent Integration via MCP Server
-
-The project includes an MCP server implementation that safely exposes the `stale` guardrail to LLM agents.
-
-- **Standardized Tools:** The MCP server registers three specific tools that agents can invoke:
-  - `stale_isStale`: Performs pure freshness logic given timestamps without network calls. Safe for unit-tests and offline verification.
-  - `stale_quote`: Executes pure price math based on the data feed `answer` and `decimals`.
-  - `stale_check`: Performs the full verification pipeline (viem network lookup → freshness check → price quote math).
-- **Safe Exposure:** The MCP implementation strictly limits feeds to an allowlist (e.g., ETH/USD and BTC/USD on mainnet) and propagates the fail-closed behavior safely to the LLM.
-- **JSON Serialization & Data Transport:** Because the Model Context Protocol uses JSON—which cannot natively serialize JavaScript `bigint` values—the MCP adapter intelligently normalizes types, converting `bigint` data like `answer` and `updatedAt` to `string` formats, ensuring robust communication between the TypeScript logic and the LLM agent.
-
-By keeping the business logic purely analytical and sandboxed behind read-only viem queries, the MCP server provides LLMs with a mathematically sound and secure guardrail to verify Chainlink data freshness.
+All on-chain guardrails implement dependency injection via the `EvmRpcClient` trait.
+In production, `HttpRpcClient` executes live JSON-RPC 2.0 calls.
+In testing, `MockRpcClient` provides deterministic, millisecond responses without touching live networks or incurring rate limits.
