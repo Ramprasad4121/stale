@@ -19,3 +19,4 @@ export {
   type CheckApprovalInput,
   type AllowanceGuardrailResult,
 } from "./allowance.js";
+export { checkGasPrice, type CheckGasPriceInput, type GasGuardrailResult } from "./gas.js";
