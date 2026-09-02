@@ -103,7 +103,10 @@ export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResu
     try {
       const chainId = await maybeGetChainId.call(client);
       if (chainId !== feedEntry.chainId) {
-        return blockResult(input, `chainId mismatch: feed ${feed} is chainId ${feedEntry.chainId} but rpc returned chainId ${String(chainId)} — BLOCK`);
+        return blockResult(
+          input,
+          `chainId mismatch: feed ${feed} is chainId ${feedEntry.chainId} but rpc returned chainId ${String(chainId)} — BLOCK`,
+        );
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -132,13 +135,13 @@ export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResu
       }) as Promise<number | bigint>,
     ]);
 
-    const data = roundData as readonly [bigint, bigint, bigint, bigint, bigint];
+    const data = roundData;
     roundId = data[0];
     answer = data[1];
     updatedAt = data[3];
     answeredInRound = data[4];
 
-    const d = dec as number | bigint;
+    const d = dec;
     decimals = typeof d === "bigint" ? Number(d) : d;
     if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
       throw new Error(`invalid decimals ${String(d)}`);
@@ -152,26 +155,40 @@ export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResu
       });
     }
     if (answer <= 0n) {
-      return blockResult(input, `answer is ${answer.toString()} (invalid price) from ${feed} — BLOCK`, {
-        answer: answer.toString(),
-        updatedAt: updatedAt.toString(),
-        ageSeconds: null,
-      });
+      return blockResult(
+        input,
+        `answer is ${answer.toString()} (invalid price) from ${feed} — BLOCK`,
+        {
+          answer: answer.toString(),
+          updatedAt: updatedAt.toString(),
+          ageSeconds: null,
+        },
+      );
     }
     if (answeredInRound < roundId) {
-      return blockResult(input, `incomplete round: answeredInRound ${answeredInRound.toString()} < roundId ${roundId.toString()} (unanswered round) from ${feed} — BLOCK`, {
-        answer: answer.toString(),
-        updatedAt: updatedAt.toString(),
-        ageSeconds: null,
-      });
+      return blockResult(
+        input,
+        `incomplete round: answeredInRound ${answeredInRound.toString()} < roundId ${roundId.toString()} (unanswered round) from ${feed} — BLOCK`,
+        {
+          answer: answer.toString(),
+          updatedAt: updatedAt.toString(),
+          ageSeconds: null,
+        },
+      );
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     // Distinguish which call failed by message; keep generic fail-closed
     if (msg.includes("decimals")) {
-      return blockResult(input, `failed to read decimals() from ${feed} — BLOCK (fail closed): ${msg}`);
+      return blockResult(
+        input,
+        `failed to read decimals() from ${feed} — BLOCK (fail closed): ${msg}`,
+      );
     }
-    return blockResult(input, `failed to read latestRoundData from ${feed} — BLOCK (fail closed): ${msg}`);
+    return blockResult(
+      input,
+      `failed to read latestRoundData from ${feed} — BLOCK (fail closed): ${msg}`,
+    );
   }
 
   const stale = isStale({ updatedAt, nowSeconds: now, maxAgeSeconds });

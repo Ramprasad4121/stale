@@ -26,9 +26,9 @@ describe("isStale", () => {
     assert.match(r.reason, /not-yet-valid/);
   });
 
-  it("4. missing/null/\"\" updatedAt → BLOCK (fail closed)", () => {
+  it('4. missing/null/"" updatedAt → BLOCK (fail closed)', () => {
     for (const v of [null, undefined, ""]) {
-      const r = isStale({ updatedAt: v as any, nowSeconds: now, maxAgeSeconds: 60 });
+      const r = isStale({ updatedAt: v, nowSeconds: now, maxAgeSeconds: 60 });
       assert.equal(r.decision, "BLOCK", `expected BLOCK for ${JSON.stringify(v)}`);
       assert.equal(r.ageSeconds, null);
       assert.match(r.reason, /missing or unparseable/);
@@ -54,13 +54,13 @@ describe("isStale", () => {
   it("7. invalid now or maxAge → BLOCK", () => {
     const badNow = [NaN, Infinity, -Infinity] as const;
     for (const n of badNow) {
-      const r = isStale({ updatedAt: now, nowSeconds: n as any, maxAgeSeconds: 60 });
+      const r = isStale({ updatedAt: now, nowSeconds: n, maxAgeSeconds: 60 });
       assert.equal(r.decision, "BLOCK");
       assert.equal(r.ageSeconds, null);
     }
     const badMax = [NaN, Infinity, -Infinity, -1] as const;
     for (const m of badMax) {
-      const r = isStale({ updatedAt: now, nowSeconds: now, maxAgeSeconds: m as any });
+      const r = isStale({ updatedAt: now, nowSeconds: now, maxAgeSeconds: m });
       assert.equal(r.decision, "BLOCK");
       assert.equal(r.ageSeconds, null);
     }
@@ -89,7 +89,11 @@ describe("isStale", () => {
     assert.equal(rFuture.ageSeconds, -5);
 
     // hex string also works via isStale string path
-    const rHex = isStale({ updatedAt: `0x${BigInt(now - 5).toString(16)}`, nowSeconds: now, maxAgeSeconds: 60 });
+    const rHex = isStale({
+      updatedAt: `0x${BigInt(now - 5).toString(16)}`,
+      nowSeconds: now,
+      maxAgeSeconds: 60,
+    });
     assert.equal(rHex.decision, "ALLOW");
     assert.equal(rHex.ageSeconds, 5);
   });
@@ -102,7 +106,11 @@ describe("isStale", () => {
     assert.equal(rFuture.ageSeconds! < 0, true);
 
     // huge stale age (now far in future) → BLOCK
-    const rHugeStale = isStale({ updatedAt: now - 1, nowSeconds: Number.MAX_SAFE_INTEGER, maxAgeSeconds: 60 });
+    const rHugeStale = isStale({
+      updatedAt: now - 1,
+      nowSeconds: Number.MAX_SAFE_INTEGER,
+      maxAgeSeconds: 60,
+    });
     assert.equal(rHugeStale.decision, "BLOCK");
     assert.equal(rHugeStale.ageSeconds! > 60, true);
 

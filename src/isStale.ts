@@ -17,11 +17,7 @@ export type IsStaleResult = {
  * Safe to unit-test and reuse in CRE workflows.
  * Official field: Data Feed `latestRoundData.updatedAt` (uint80 seconds).
  */
-export function isStale({
-  updatedAt,
-  nowSeconds,
-  maxAgeSeconds,
-}: IsStaleInput): IsStaleResult {
+export function isStale({ updatedAt, nowSeconds, maxAgeSeconds }: IsStaleInput): IsStaleResult {
   // Validate window first — bad window is BLOCK (fail closed, no partial age)
   if (!Number.isFinite(nowSeconds) || !Number.isInteger(maxAgeSeconds)) {
     return {
