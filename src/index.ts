@@ -42,3 +42,12 @@ export {
   type CheckIsContractInput,
   type ContractGuardrailResult,
 } from "./contract.js";
+export {
+  checkRpcSync,
+  checkChainId,
+  checkNonce,
+  type CheckRpcSyncInput,
+  type CheckChainIdInput,
+  type CheckNonceInput,
+  type NetworkGuardrailResult,
+} from "./network.js";
