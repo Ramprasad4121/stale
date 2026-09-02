@@ -42,7 +42,7 @@ describe("checkApproval", () => {
   });
 
   it("BLOCKs dangerously large approvals (> 2^255)", () => {
-    const huge = (2n ** 255n) + 1n;
+    const huge = 2n ** 255n + 1n;
     const res = checkApproval({
       token: TOKEN,
       spender: SPENDER,
@@ -121,11 +121,66 @@ describe("checkAllowance", () => {
   });
 
   it("BLOCKs on invalid inputs", async () => {
-    assert.equal((await checkAllowance({ rpc: RPC, token: "0x123", owner: OWNER, spender: SPENDER, requiredAmount: 100n })).decision, "BLOCK");
-    assert.equal((await checkAllowance({ rpc: RPC, token: TOKEN, owner: "0x123", spender: SPENDER, requiredAmount: 100n })).decision, "BLOCK");
-    assert.equal((await checkAllowance({ rpc: RPC, token: TOKEN, owner: OWNER, spender: "0x123", requiredAmount: 100n })).decision, "BLOCK");
+    assert.equal(
+      (
+        await checkAllowance({
+          rpc: RPC,
+          token: "0x123",
+          owner: OWNER,
+          spender: SPENDER,
+          requiredAmount: 100n,
+        })
+      ).decision,
+      "BLOCK",
+    );
+    assert.equal(
+      (
+        await checkAllowance({
+          rpc: RPC,
+          token: TOKEN,
+          owner: "0x123",
+          spender: SPENDER,
+          requiredAmount: 100n,
+        })
+      ).decision,
+      "BLOCK",
+    );
+    assert.equal(
+      (
+        await checkAllowance({
+          rpc: RPC,
+          token: TOKEN,
+          owner: OWNER,
+          spender: "0x123",
+          requiredAmount: 100n,
+        })
+      ).decision,
+      "BLOCK",
+    );
     // @ts-expect-error
-    assert.equal((await checkAllowance({ rpc: RPC, token: TOKEN, owner: OWNER, spender: SPENDER, requiredAmount: -1n })).decision, "BLOCK");
-    assert.equal((await checkAllowance({ rpc: "", token: TOKEN, owner: OWNER, spender: SPENDER, requiredAmount: 100n })).decision, "BLOCK");
+    assert.equal(
+      (
+        await checkAllowance({
+          rpc: RPC,
+          token: TOKEN,
+          owner: OWNER,
+          spender: SPENDER,
+          requiredAmount: -1n,
+        })
+      ).decision,
+      "BLOCK",
+    );
+    assert.equal(
+      (
+        await checkAllowance({
+          rpc: "",
+          token: TOKEN,
+          owner: OWNER,
+          spender: SPENDER,
+          requiredAmount: 100n,
+        })
+      ).decision,
+      "BLOCK",
+    );
   });
 });

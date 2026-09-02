@@ -25,3 +25,9 @@ export { checkGasPrice, type CheckGasPriceInput, type GasGuardrailResult } from 
 export { checkBalance, type CheckBalanceInput, type SolvencyGuardrailResult } from "./solvency.js";
 export { checkPaused, type CheckPausedInput, type PausableGuardrailResult } from "./pausable.js";
 export { simulateTx, type SimulateTxInput, type SimulateGuardrailResult } from "./simulate.js";
+export {
+  checkSanctioned,
+  type CheckSanctionsInput,
+  type SanctionsGuardrailResult,
+  SANCTIONS_ORACLE,
+} from "./sanctions.js";
