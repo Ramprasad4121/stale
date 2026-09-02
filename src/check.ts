@@ -118,11 +118,11 @@ export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResu
   const sequencerFeed = SEQUENCER_FEEDS[feedEntry.chainId];
   if (sequencerFeed) {
     try {
-      const seqRoundData = (await client.readContract({
+      const seqRoundData = await client.readContract({
         address: sequencerFeed as `0x${string}`,
         abi: feedAbi,
         functionName: "latestRoundData",
-      }));
+      });
 
       const seqAnswer = seqRoundData[1];
       const seqStartedAt = seqRoundData[2];
