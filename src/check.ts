@@ -2,7 +2,8 @@ import { createPublicClient, http, parseAbi, type PublicClient } from "viem";
 import { mainnet } from "viem/chains";
 import { isStale } from "./isStale.js";
 import { quoteFromFeed } from "./quote.js";
-import { lookupFeed, SEQUENCER_FEEDS } from "./feeds.js";
+import { lookupFeed } from "./feeds.js";
+import { checkSequencer } from "./sequencer.js";
 
 /**
  * Official Data Feed ABI — only `decimals` and `latestRoundData` per
@@ -115,39 +116,9 @@ export async function checkPrice(input: CheckPriceInput): Promise<CheckPriceResu
   }
 
   // Sequencer Liveness Check (Fail closed)
-  const sequencerFeed = SEQUENCER_FEEDS[feedEntry.chainId];
-  if (sequencerFeed) {
-    try {
-      const seqRoundData = (await client.readContract({
-        address: sequencerFeed as `0x${string}`,
-        abi: feedAbi,
-        functionName: "latestRoundData",
-      }));
-
-      const seqAnswer = seqRoundData[1];
-      const seqStartedAt = seqRoundData[2];
-
-      if (seqAnswer === 1n) {
-        return blockResult(input, `L2 Sequencer is DOWN on chain ${feedEntry.chainId} — BLOCK`);
-      }
-
-      const GRACE_PERIOD = 3600;
-      if (seqAnswer === 0n) {
-        const timeSinceUp = now - Number(seqStartedAt);
-        if (timeSinceUp < GRACE_PERIOD) {
-          return blockResult(
-            input,
-            `L2 Sequencer is in grace period (${timeSinceUp}s < ${GRACE_PERIOD}s) on chain ${feedEntry.chainId} — BLOCK`,
-          );
-        }
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return blockResult(
-        input,
-        `failed to read sequencer feed on chain ${feedEntry.chainId} — BLOCK (fail closed): ${msg}`,
-      );
-    }
+  const seqError = await checkSequencer(feedEntry.chainId, client, feedAbi, now);
+  if (seqError) {
+    return blockResult(input, seqError);
   }
 
   // Parallel reads — viem batches `eth_call` at end of tick (public client docs)

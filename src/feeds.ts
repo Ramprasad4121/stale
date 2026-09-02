@@ -1,3 +1,9 @@
+/**
+ * @module feeds
+ * Contains the allowlist of officially supported Chainlink Data Feeds and L2 Sequencer feeds.
+ * Stale strictly defaults to fail-closed if an unknown feed address is requested.
+ */
+
 export const MAINNET_CHAIN_ID = 1;
 export const OPTIMISM_CHAIN_ID = 10;
 export const POLYGON_CHAIN_ID = 137;
