@@ -19,16 +19,17 @@ pub async fn check_gas_price(
         }
     };
 
-    let current_gwei = (gas_price_wei / 1_000_000_000) as u64;
+    let max_gas_price_wei = (max_gas_price_gwei as u128).saturating_mul(1_000_000_000);
+    let current_gwei = (gas_price_wei as f64) / 1_000_000_000.0;
 
-    if current_gwei > max_gas_price_gwei {
+    if gas_price_wei > max_gas_price_wei {
         GuardrailResult::block(format!(
-            "network gas price {} gwei exceeds maximum allowed {} gwei — BLOCK",
+            "network gas price {:.2} gwei exceeds maximum allowed {} gwei — BLOCK",
             current_gwei, max_gas_price_gwei
         ))
     } else {
         GuardrailResult::allow(format!(
-            "network gas price {} gwei is within safe limits",
+            "network gas price {:.2} gwei is within safe limits",
             current_gwei
         ))
     }
@@ -48,6 +49,18 @@ mod tests {
 
         let res = check_gas_price(&mock, 50).await;
         assert!(res.allow_execute);
+    }
+
+    #[tokio::test]
+    async fn test_gas_price_borderline_fraction_blocked() {
+        let mock = MockRpcClient {
+            gas_price: Some(50_500_000_000), // 50.5 gwei
+            ..Default::default()
+        };
+
+        let res = check_gas_price(&mock, 50).await;
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("exceeds maximum allowed"));
     }
 
     #[tokio::test]

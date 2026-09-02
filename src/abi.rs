@@ -1,5 +1,10 @@
 pub fn encode_address_param(addr: &str) -> String {
     let clean = addr.trim().trim_start_matches("0x");
+    if clean.len() > 40 {
+        // Truncate from end or take last 40 characters
+        let trimmed = &clean[clean.len() - 40..];
+        return format!("{:0>64}", trimmed);
+    }
     format!("{:0>64}", clean)
 }
 
@@ -9,36 +14,60 @@ pub fn encode_u256_param(val: u128) -> String {
 
 pub fn decode_word_u128(hex_str: &str, offset_words: usize) -> Result<u128, String> {
     let clean = hex_str.trim().trim_start_matches("0x");
+    if !clean.is_ascii() {
+        return Err("hex response contains non-ASCII characters".to_string());
+    }
     let start = offset_words * 64;
     let end = start + 64;
-    if clean.len() < end {
-        return Err(format!("hex response too short for word {}", offset_words));
-    }
-    let slice = &clean[start..end];
+    let slice = clean
+        .get(start..end)
+        .ok_or_else(|| format!("hex response too short for word {}", offset_words))?;
+
     u128::from_str_radix(slice, 16).map_err(|e| format!("failed to parse word u128: {}", e))
 }
 
 pub fn decode_word_i128(hex_str: &str, offset_words: usize) -> Result<i128, String> {
     let clean = hex_str.trim().trim_start_matches("0x");
+    if !clean.is_ascii() {
+        return Err("hex response contains non-ASCII characters".to_string());
+    }
     let start = offset_words * 64;
     let end = start + 64;
-    if clean.len() < end {
-        return Err(format!("hex response too short for word {}", offset_words));
-    }
-    let slice = &clean[start..end];
+    let slice = clean
+        .get(start..end)
+        .ok_or_else(|| format!("hex response too short for word {}", offset_words))?;
+
+    let upper = &slice[0..32];
+    let lower = &slice[32..64];
+
     // Check two's complement if first character >= '8'
     let first_char = slice.chars().next().unwrap_or('0');
     if ('8'..='f').contains(&first_char) || ('A'..='F').contains(&first_char) {
         // Negative number in 256-bit representation
-        let u = u128::from_str_radix(&slice[32..64], 16)
+        // Upper 128 bits MUST all be 'f' or 'F' to fit in i128
+        if !upper.chars().all(|c| c == 'f' || c == 'F') {
+            return Err("int256 underflow: negative value exceeds i128 bounds".to_string());
+        }
+        let u = u128::from_str_radix(lower, 16)
             .map_err(|e| format!("failed to parse negative i128: {}", e))?;
-        // If it's a signed 256 bit negative number, it's negative
-        let signed = -(1i128.wrapping_add(!u as i128));
+        // Must have MSB set in lower half as well
+        if u < (1u128 << 127) {
+            return Err("int256 underflow: corrupted sign bit in lower 128 bits".to_string());
+        }
+        let signed = u as i128;
         Ok(signed)
     } else {
-        u128::from_str_radix(&slice[32..64], 16)
-            .map(|u| u as i128)
-            .map_err(|e| format!("failed to parse word i128: {}", e))
+        // Positive number in 256-bit representation
+        // Upper 128 bits MUST all be '0'
+        if !upper.chars().all(|c| c == '0') {
+            return Err("int256 overflow: positive value exceeds i128 bounds".to_string());
+        }
+        let u = u128::from_str_radix(lower, 16)
+            .map_err(|e| format!("failed to parse word i128: {}", e))?;
+        if u > (i128::MAX as u128) {
+            return Err("int256 overflow: positive value exceeds i128::MAX".to_string());
+        }
+        Ok(u as i128)
     }
 }
 
@@ -69,7 +98,6 @@ mod tests {
 
     #[test]
     fn test_decode_round_data() {
-        // 5 words of 64 hex chars = 320 hex chars
         let round_id = format!("{:0>64x}", 1u64);
         let answer = format!("{:0>64x}", 250000000000u64);
         let started_at = format!("{:0>64x}", 1700000000u64);
@@ -86,5 +114,24 @@ mod tests {
         assert_eq!(decoded.2, 1700000000);
         assert_eq!(decoded.3, 1700000050);
         assert_eq!(decoded.4, 1);
+    }
+
+    #[test]
+    fn test_decode_negative_int256() {
+        // -1 in 256 bits = 64 'f' characters
+        let minus_one_hex = "f".repeat(64);
+        let decoded = decode_word_i128(&minus_one_hex, 0).unwrap();
+        assert_eq!(decoded, -1);
+    }
+
+    #[test]
+    fn test_decode_int256_overflow_rejected() {
+        // Positive value 2^128 (upper bit set in word)
+        let mut overflow_hex = "0".repeat(31) + "1" + &"0".repeat(32);
+        assert!(decode_word_i128(&overflow_hex, 0).is_err());
+
+        // Negative value < -2^127
+        overflow_hex = "8".repeat(32) + &"0".repeat(32);
+        assert!(decode_word_i128(&overflow_hex, 0).is_err());
     }
 }

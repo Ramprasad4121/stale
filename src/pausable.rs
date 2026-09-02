@@ -14,18 +14,31 @@ pub async fn check_paused(client: &dyn EvmRpcClient, contract: &str) -> Guardrai
         Ok(hex_data) => match decode_bool(&hex_data) {
             Ok(b) => b,
             Err(_) => {
-                // Not implementing paused() returns ALLOW
+                // Return data is empty or not a bool -> does not implement paused()
                 return GuardrailResult::allow(format!(
                     "contract {} does not implement paused() — safely ALLOW",
                     contract
                 ));
             }
         },
-        Err(_) => {
-            // If the call reverts, contract does not implement paused()
-            return GuardrailResult::allow(format!(
-                "contract {} does not implement paused() or call reverted — safely ALLOW",
-                contract
+        Err(e) => {
+            let lower = e.to_lowercase();
+            // Contract without paused() reverts on call:
+            if lower.contains("revert")
+                || lower.contains("invalid opcode")
+                || lower.contains("function not found")
+                || lower.contains("0x")
+            {
+                return GuardrailResult::allow(format!(
+                    "contract {} does not implement paused() (call reverted) — safely ALLOW",
+                    contract
+                ));
+            }
+
+            // Real network / RPC transport errors MUST fail closed!
+            return GuardrailResult::block(format!(
+                "failed to verify contract paused state due to RPC error — BLOCK (fail closed): {}",
+                e
             ));
         }
     };
@@ -79,5 +92,19 @@ mod tests {
         let res = check_paused(&mock, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").await;
         assert!(res.allow_execute);
         assert!(res.reason.contains("does not implement paused()"));
+    }
+
+    #[tokio::test]
+    async fn test_contract_network_error_fails_closed() {
+        let mock = MockRpcClient {
+            call_handler: Some(Arc::new(move |_, _| {
+                Err("HTTP 504 Gateway Timeout".to_string())
+            })),
+            ..Default::default()
+        };
+
+        let res = check_paused(&mock, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").await;
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("RPC error"));
     }
 }

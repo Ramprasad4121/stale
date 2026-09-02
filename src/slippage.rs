@@ -30,20 +30,35 @@ pub fn calculate_min_amount_out(input: CalculateMinAmountOutInput) -> Result<u12
     let exp_in = (input.token_in_decimals + input.price_in_decimals) as i32;
     let exp_diff = exp_out - exp_in;
 
-    let base_out = input
+    let prod = input
         .amount_in
         .checked_mul(input.price_in_answer)
-        .ok_or_else(|| "overflow in amount_in * price_in_answer".to_string())?
-        / input.price_out_answer;
+        .ok_or_else(|| "overflow in amount_in * price_in_answer".to_string())?;
 
     let raw_amount_out = if exp_diff >= 0 {
         let scale = 10u128.pow(exp_diff as u32);
-        base_out
+        // Compute (prod * scale) / price_out without premature truncation:
+        // Using: (prod * scale) / price_out = (prod / price_out) * scale + ((prod % price_out) * scale) / price_out
+        let q = prod / input.price_out_answer;
+        let r = prod % input.price_out_answer;
+
+        let term1 = q
             .checked_mul(scale)
-            .ok_or_else(|| "overflow in scaling raw_amount_out".to_string())?
+            .ok_or_else(|| "overflow in scaling quotient".to_string())?;
+        let term2 = r
+            .checked_mul(scale)
+            .ok_or_else(|| "overflow in scaling remainder".to_string())?
+            / input.price_out_answer;
+
+        term1
+            .checked_add(term2)
+            .ok_or_else(|| "overflow in raw_amount_out".to_string())?
     } else {
         let scale = 10u128.pow((-exp_diff) as u32);
-        base_out / scale
+        match input.price_out_answer.checked_mul(scale) {
+            Some(denom) => prod / denom,
+            None => (prod / input.price_out_answer) / scale,
+        }
     };
 
     let factor = (10000 - input.slippage_bps) as u128;
@@ -74,6 +89,26 @@ mod tests {
 
         // 2500 USDC with 6 decimals = 2_500_000_000
         assert_eq!(res, 2_500_000_000);
+    }
+
+    #[test]
+    fn test_small_amount_preserves_precision() {
+        // amount_in * price_in < price_out
+        // 10 wei of tokenIn priced at 2000, swapping to tokenOut priced at 50000, exp_diff = +6
+        let res = calculate_min_amount_out(CalculateMinAmountOutInput {
+            amount_in: 10,
+            token_in_decimals: 6,
+            price_in_answer: 2000,
+            price_in_decimals: 0,
+            token_out_decimals: 12,
+            price_out_answer: 50000,
+            price_out_decimals: 0,
+            slippage_bps: 0,
+        })
+        .unwrap();
+
+        // (10 * 2000 * 10^6) / 50000 = 20_000_000_000 / 50000 = 400_000
+        assert_eq!(res, 400_000);
     }
 
     #[test]

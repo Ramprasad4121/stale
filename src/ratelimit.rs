@@ -83,7 +83,11 @@ impl SpendingCap {
         let window = self.window;
         self.ledger.retain(|&(t, _)| now.duration_since(t) < window);
 
-        let current_spend: u128 = self.ledger.iter().map(|&(_, amt)| amt).sum();
+        let current_spend: u128 = self
+            .ledger
+            .iter()
+            .fold(0u128, |acc, &(_, amt)| acc.saturating_add(amt));
+
         let projected_spend = match current_spend.checked_add(proposed_amount) {
             Some(sum) => sum,
             None => return GuardrailResult::block("overflow in projected spend — BLOCK"),
@@ -110,7 +114,10 @@ impl SpendingCap {
         let now = Instant::now();
         let window = self.window;
         self.ledger.retain(|&(t, _)| now.duration_since(t) < window);
-        let spent: u128 = self.ledger.iter().map(|&(_, amt)| amt).sum();
+        let spent: u128 = self
+            .ledger
+            .iter()
+            .fold(0u128, |acc, &(_, amt)| acc.saturating_add(amt));
         self.max_spend.saturating_sub(spent)
     }
 }

@@ -19,7 +19,7 @@ pub async fn check_price_deviation(
     if !is_valid_eth_address(feed_b) {
         return GuardrailResult::block(format!("invalid feedB address {} — BLOCK", feed_b));
     }
-    if max_deviation_percent <= 0.0 {
+    if !max_deviation_percent.is_finite() || max_deviation_percent <= 0.0 {
         return GuardrailResult::block("invalid maxDeviationPercent — BLOCK");
     }
 
@@ -52,6 +52,10 @@ pub async fn check_price_deviation(
         Err(e) => return GuardrailResult::block(format!("failed to query feedB decimals: {}", e)),
     };
 
+    if dec_a > 36 || dec_b > 36 {
+        return GuardrailResult::block("feed decimals exceed maximum supported 36 — BLOCK");
+    }
+
     let ans_a = round_a.1;
     let ans_b = round_b.1;
 
@@ -62,16 +66,20 @@ pub async fn check_price_deviation(
     let price_a = (ans_a as f64) / 10_f64.powi(dec_a as i32);
     let price_b = (ans_b as f64) / 10_f64.powi(dec_b as i32);
 
+    if !price_a.is_finite() || !price_b.is_finite() {
+        return GuardrailResult::block("non-finite price computed from feeds — BLOCK");
+    }
+
     let diff = (price_a - price_b).abs();
     let avg = (price_a + price_b) / 2.0;
 
-    if avg == 0.0 {
-        return GuardrailResult::block("average price is zero — BLOCK");
+    if avg <= 0.0 || !avg.is_finite() {
+        return GuardrailResult::block("invalid average price — BLOCK");
     }
 
     let deviation_percent = (diff / avg) * 100.0;
 
-    if deviation_percent > max_deviation_percent {
+    if !deviation_percent.is_finite() || deviation_percent > max_deviation_percent {
         GuardrailResult::block(format!(
             "ORACLE DEVIATION DANGER: feeds deviate by {:.2}% (max {:.2}%). Possible oracle manipulation. — BLOCK",
             deviation_percent, max_deviation_percent

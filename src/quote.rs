@@ -34,7 +34,16 @@ pub fn quote_from_feed(input: QuoteInput) -> Result<QuoteResult, String> {
         return Err(format!("invalid calculated price_usd {}", price_usd));
     }
 
-    let quote_usd = input.amount.map(|amt| amt * price_usd);
+    let quote_usd = match input.amount {
+        Some(amt) => {
+            let q = amt * price_usd;
+            if !q.is_finite() {
+                return Err("calculated quote_usd is not finite".to_string());
+            }
+            Some(q)
+        }
+        None => None,
+    };
 
     Ok(QuoteResult {
         price_usd,
