@@ -20,3 +20,5 @@ export {
   type AllowanceGuardrailResult,
 } from "./allowance.js";
 export { checkGasPrice, type CheckGasPriceInput, type GasGuardrailResult } from "./gas.js";
+export { checkBalance, type CheckBalanceInput, type SolvencyGuardrailResult } from "./solvency.js";
+export { checkPaused, type CheckPausedInput, type PausableGuardrailResult } from "./pausable.js";
