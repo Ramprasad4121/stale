@@ -9,6 +9,10 @@ export const OPTIMISM_CHAIN_ID = 10;
 export const POLYGON_CHAIN_ID = 137;
 export const BASE_CHAIN_ID = 8453;
 export const ARBITRUM_CHAIN_ID = 42161;
+export const ZKSYNC_CHAIN_ID = 324;
+export const METIS_CHAIN_ID = 1088;
+export const MANTLE_CHAIN_ID = 5000;
+export const SCROLL_CHAIN_ID = 534352;
 
 export const DEFAULT_FEED = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
 
@@ -20,6 +24,10 @@ export const SEQUENCER_FEEDS: Record<number, string> = {
   [ARBITRUM_CHAIN_ID]: "0xFdB631F5EE196F0ed6FAa767959853A9F217697D",
   [OPTIMISM_CHAIN_ID]: "0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389",
   [BASE_CHAIN_ID]: "0xBCF85224fc0756B9Fa45aA7892530B47e10b6433",
+  [ZKSYNC_CHAIN_ID]: "0x0E6AC8B967393dcD3D36677c126976157F993940",
+  [METIS_CHAIN_ID]: "0x58218ea7422255EBE94e56b504035a784b7AA204",
+  [MANTLE_CHAIN_ID]: "0xaDE1b9AbB98c6A542E4B49db2588a3Ec4bF7Cdf0",
+  [SCROLL_CHAIN_ID]: "0x45c2b8C204568A03Dc7A2E32B71D67Fe97F908A9",
 };
 
 export type FeedEntry = {
@@ -83,6 +91,26 @@ const registry: FeedEntry[] = [
     address: "0x6ce185860a496ce102b7325b39ce47432d6dbdfd",
     symbol: "BTC/USD",
     chainId: ARBITRUM_CHAIN_ID,
+  },
+  {
+    address: "0x6D41d1dc81ea29853289D222B5D5B3f2F4f75727",
+    symbol: "ETH/USD",
+    chainId: ZKSYNC_CHAIN_ID,
+  },
+  {
+    address: "0xBd04B7fA53B3C18cbA3C088b9076C374b344C811",
+    symbol: "ETH/USD",
+    chainId: METIS_CHAIN_ID,
+  },
+  {
+    address: "0x32357754B4B99aB123fE7778b4dcA2E351E2cb2B",
+    symbol: "ETH/USD",
+    chainId: MANTLE_CHAIN_ID,
+  },
+  {
+    address: "0x59F1ec1f10bD7eD9B938431086bC1D9e233ECf41",
+    symbol: "ETH/USD",
+    chainId: SCROLL_CHAIN_ID,
   },
 ];
 
