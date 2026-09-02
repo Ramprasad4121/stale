@@ -1,7 +1,5 @@
 # 🛡️ stale
 
-> The ultimate, un-bypassable Linux-level security standard for autonomous AI agents that touch money.
-
 `stale` is a pure, fast, dependency-light TypeScript library that provides an impenetrable 10-point defense system for AI agents transacting on-chain. It strictly enforces least-privilege execution and fails closed on ANY anomaly.
 
 [![npm version](https://img.shields.io/npm/v/@ramprasad4121/stale.svg)](https://www.npmjs.com/package/@ramprasad4121/stale)
