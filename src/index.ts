@@ -58,3 +58,12 @@ export {
   type SpendingCapConfig,
   type RateLimitResult,
 } from "./ratelimit.js";
+export { AuditLogger, type AuditEntry, type AuditLoggerConfig } from "./audit.js";
+export {
+  GuardPipeline,
+  createGuardPipeline,
+  type GuardFn,
+  type GuardResult,
+  type PipelineResult,
+  type PipelineConfig,
+} from "./pipeline.js";
