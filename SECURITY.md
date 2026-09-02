@@ -36,7 +36,7 @@ act on fresh enough under the caller's `maxAgeSeconds` policy?
 
 - Data Feeds: `latestRoundData()` returns
   `(uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt,
-  uint80 answeredInRound)` and `decimals()` returns `uint8`.
+uint80 answeredInRound)` and `decimals()` returns `uint8`.
   `updatedAt` is seconds since epoch (uint80, but fits in 53 bits for the
   `age = now - updatedAt` math). `answer` is `int256` scaled by `10**decimals`.
 - Never hardcode `decimals`. `stale` fetches it on-chain via `decimals()`
@@ -63,7 +63,7 @@ act on fresh enough under the caller's `maxAgeSeconds` policy?
 ## RPC assumptions
 
 - `checkPrice({ rpc })` uses `viem` `createPublicClient({ chain: mainnet,
-  transport: http(rpc) })` + `readContract` (`eth_call`). No wallet, no
+transport: http(rpc) })` + `readContract` (`eth_call`). No wallet, no
   signing, no `eth_sendTransaction`.
 - Any RPC failure, malformed response, or unexpected structure → `BLOCK`.
   `stale` never replaces a failed read with cached data and never turns an
@@ -168,7 +168,7 @@ failure into `ALLOW`.
   `ethereum-mainnet`. Staging `3600` allows local `ALLOW`; production `60`
   is the real policy.
 - Simulation: `cd cre && cre workflow simulate workflows/stale --target
-  staging-settings --non-interactive --trigger-index 0 --allow-insecure-rpc`
+staging-settings --non-interactive --trigger-index 0 --allow-insecure-rpc`
   (without `--non-interactive` the CLI can hang; `429` → `BLOCK`; no private
   key, no `--broadcast`, no `cre workflow deploy` without explicit human
   approval). Currently verified through local simulation, not yet running
@@ -194,7 +194,7 @@ failure into `ALLOW`.
 
 Every public entry — `isStale`, `quoteFromFeed`, `checkPrice`, `stale` CLI,
 `stale-mcp` tools, and the CRE `onCron` handler — is fail-closed. The only
-way to get `ALLOW` and `allowExecute:true` is to pass *every* check with a
+way to get `ALLOW` and `allowExecute:true` is to pass _every_ check with a
 fresh, valid `updatedAt` and `answer`. Any doubt → `BLOCK`.
 
 Never claim stronger guarantees than the implementation. If a new check is

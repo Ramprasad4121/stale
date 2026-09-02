@@ -103,7 +103,11 @@ describe("MCP server — stale tools (no live RPC for isStale/quote, mocked chec
     // huge future timestamp via stale_isStale → BLOCK
     const huge = await client.callTool({
       name: "stale_isStale",
-      arguments: { updatedAt: String((BigInt(1) << BigInt(40)).toString()), nowSeconds: now, maxAgeSeconds: 60 },
+      arguments: {
+        updatedAt: String((BigInt(1) << BigInt(40)).toString()),
+        nowSeconds: now,
+        maxAgeSeconds: 60,
+      },
     });
     assert.match((huge.content as any)[0].text as string, /BLOCK/);
     // huge amountEth overflow via quote → isError

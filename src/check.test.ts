@@ -8,12 +8,25 @@ const BTC_FEED = "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c";
 const RPC = "https://ethereum-rpc.publicnode.com";
 const NOW = 1_724_520_000;
 
-function mockClient(opts: { answer: bigint; updatedAt: bigint; decimals: number | bigint | Error; roundId?: bigint; answeredInRound?: bigint; chainId?: number | Error }): Pick<PublicClient, "readContract"> & { getChainId?: PublicClient["getChainId"] } {
+function mockClient(opts: {
+  answer: bigint;
+  updatedAt: bigint;
+  decimals: number | bigint | Error;
+  roundId?: bigint;
+  answeredInRound?: bigint;
+  chainId?: number | Error;
+}): Pick<PublicClient, "readContract"> & { getChainId?: PublicClient["getChainId"] } {
   const client: Pick<PublicClient, "readContract"> & { getChainId?: PublicClient["getChainId"] } = {
     readContract: (async ({ functionName }: { functionName: string }) => {
       if (functionName === "latestRoundData") {
         // (roundId, answer, startedAt, updatedAt, answeredInRound)
-        return [opts.roundId ?? 1n, opts.answer, 1n, opts.updatedAt, opts.answeredInRound ?? 1n] as const;
+        return [
+          opts.roundId ?? 1n,
+          opts.answer,
+          1n,
+          opts.updatedAt,
+          opts.answeredInRound ?? 1n,
+        ] as const;
       }
       if (functionName === "decimals") {
         if (opts.decimals instanceof Error) throw opts.decimals;
@@ -23,10 +36,10 @@ function mockClient(opts: { answer: bigint; updatedAt: bigint; decimals: number 
     }) as unknown as PublicClient["readContract"],
   };
   if (opts.chainId !== undefined) {
-    client.getChainId = (async () => {
+    client.getChainId = async () => {
       if (opts.chainId instanceof Error) throw opts.chainId;
-      return opts.chainId as number;
-    }) as unknown as PublicClient["getChainId"];
+      return opts.chainId!;
+    };
   }
   return client;
 }
@@ -104,7 +117,11 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
       feed: FEED,
       maxAgeSeconds: 60,
       nowSeconds: NOW,
-      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: new Error("decimals down") }),
+      __client: mockClient({
+        answer: 300000000000n,
+        updatedAt: BigInt(NOW - 10),
+        decimals: new Error("decimals down"),
+      }),
     });
     assert.equal(r.decision, "BLOCK");
     assert.equal(r.allowExecute, false);
@@ -117,7 +134,13 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
       feed: FEED,
       maxAgeSeconds: 60,
       nowSeconds: NOW,
-      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, roundId: 2n, answeredInRound: 1n }),
+      __client: mockClient({
+        answer: 300000000000n,
+        updatedAt: BigInt(NOW - 10),
+        decimals: 8,
+        roundId: 2n,
+        answeredInRound: 1n,
+      }),
     });
     assert.equal(r.decision, "BLOCK");
     assert.equal(r.allowExecute, false);
@@ -130,7 +153,13 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
       feed: FEED,
       maxAgeSeconds: 60,
       nowSeconds: NOW,
-      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, roundId: 5n, answeredInRound: 5n }),
+      __client: mockClient({
+        answer: 300000000000n,
+        updatedAt: BigInt(NOW - 10),
+        decimals: 8,
+        roundId: 5n,
+        answeredInRound: 5n,
+      }),
     });
     assert.equal(r.decision, "ALLOW");
     assert.equal(r.allowExecute, true);
@@ -143,7 +172,12 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
       feed: FEED,
       maxAgeSeconds: 60,
       nowSeconds: NOW,
-      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, chainId: 1 }),
+      __client: mockClient({
+        answer: 300000000000n,
+        updatedAt: BigInt(NOW - 10),
+        decimals: 8,
+        chainId: 1,
+      }),
     });
     assert.equal(r.decision, "ALLOW");
     assert.equal(r.allowExecute, true);
@@ -156,7 +190,12 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
       feed: FEED,
       maxAgeSeconds: 60,
       nowSeconds: NOW,
-      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, chainId: 11155111 }),
+      __client: mockClient({
+        answer: 300000000000n,
+        updatedAt: BigInt(NOW - 10),
+        decimals: 8,
+        chainId: 11155111,
+      }),
     });
     assert.equal(r.decision, "BLOCK");
     assert.equal(r.allowExecute, false);
@@ -169,7 +208,12 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
       feed: FEED,
       maxAgeSeconds: 60,
       nowSeconds: NOW,
-      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, chainId: new Error("chainId down") }),
+      __client: mockClient({
+        answer: 300000000000n,
+        updatedAt: BigInt(NOW - 10),
+        decimals: 8,
+        chainId: new Error("chainId down"),
+      }),
     });
     assert.equal(r.decision, "BLOCK");
     assert.equal(r.allowExecute, false);
@@ -182,7 +226,12 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
       feed: BTC_FEED,
       maxAgeSeconds: 60,
       nowSeconds: NOW,
-      __client: mockClient({ answer: 6100000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, chainId: 1 }),
+      __client: mockClient({
+        answer: 6100000000000n,
+        updatedAt: BigInt(NOW - 10),
+        decimals: 8,
+        chainId: 1,
+      }),
     });
     assert.equal(r.decision, "ALLOW");
     assert.equal(r.allowExecute, true);
@@ -195,7 +244,12 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
       feed: BTC_FEED,
       maxAgeSeconds: 60,
       nowSeconds: NOW,
-      __client: mockClient({ answer: 6100000000000n, updatedAt: BigInt(NOW - 10), decimals: 8, chainId: 11155111 }),
+      __client: mockClient({
+        answer: 6100000000000n,
+        updatedAt: BigInt(NOW - 10),
+        decimals: 8,
+        chainId: 11155111,
+      }),
     });
     assert.equal(r.decision, "BLOCK");
     assert.equal(r.allowExecute, false);

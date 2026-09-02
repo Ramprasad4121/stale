@@ -71,7 +71,9 @@ async function main(): Promise<void> {
 
   const maxAgeSeconds = Number(values.maxAge);
   if (!Number.isFinite(maxAgeSeconds) || !Number.isInteger(maxAgeSeconds) || maxAgeSeconds < 0) {
-    console.log(truncate(`BLOCK — invalid --maxAge "${values.maxAge}" — must be integer >= 0 — BLOCK`));
+    console.log(
+      truncate(`BLOCK — invalid --maxAge "${values.maxAge}" — must be integer >= 0 — BLOCK`),
+    );
     process.exit(1);
   }
 
@@ -94,7 +96,9 @@ async function main(): Promise<void> {
     }
     const n = Number(raw);
     if (!Number.isFinite(n) || n < 0) {
-      console.log(truncate(`BLOCK — invalid --amount "${values.amount}" — must be number >= 0 — BLOCK`));
+      console.log(
+        truncate(`BLOCK — invalid --amount "${values.amount}" — must be number >= 0 — BLOCK`),
+      );
       process.exit(1);
     }
     amountEth = n;
@@ -113,8 +117,12 @@ async function main(): Promise<void> {
   }
 
   console.log(`${result.decision} — ${truncate(result.reason)}`);
-  console.log(`feed=${result.feed} answer=${result.answer} updatedAt=${result.updatedAt} age=${result.ageSeconds ?? "null"}s maxAge=${result.maxAgeSeconds}s now=${result.now}`);
-  console.log(`priceUsd=${result.priceUsd ?? "null"} amountEth=${result.amountEth ?? "null"} quoteUsd=${result.quoteUsd ?? "null"}`);
+  console.log(
+    `feed=${result.feed} answer=${result.answer} updatedAt=${result.updatedAt} age=${result.ageSeconds ?? "null"}s maxAge=${result.maxAgeSeconds}s now=${result.now}`,
+  );
+  console.log(
+    `priceUsd=${result.priceUsd ?? "null"} amountEth=${result.amountEth ?? "null"} quoteUsd=${result.quoteUsd ?? "null"}`,
+  );
 
   if (!result.allowExecute) {
     console.log(truncate(`notify: ${result.reason} — do not act`));

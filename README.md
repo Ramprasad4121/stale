@@ -1,25 +1,28 @@
 stale
 =====
+
 Guardrail for onchain agents. Before an agent acts on a Chainlink price, stale
 checks whether that price is still fresh. If it is stale, expired, or
 not-yet-valid, it returns BLOCK and a notify message. It never sends a
 transaction. It never invents a feed. It fails closed on every path that
 could let a stale price through.
 
-
 Install
 -------
+
 ```
 npm install @ramprasad4121/stale
 ```
 
 (or)
+
 ```
 git clone https://github.com/Ramprasad4121/stale.git && cd stale && npm install # secondary: local dev path
 ```
 
 Use
 ---
+
 CLI:
 
 npx stale --rpc https://ethereum-rpc.publicnode.com --maxAge 3600
@@ -43,7 +46,7 @@ Programmatic allowlist check: lookupFeed("0x...") returns the feed entry or
 null for unknown proxies. FEEDS (list) and DEFAULT_FEED are also exported.
 
 --rpc and --maxAge are required.
-Optional: --amount 0.5  --feed <allowlisted proxy>  --json
+Optional: --amount 0.5 --feed <allowlisted proxy> --json
 Exit 0 = ALLOW. Exit 1 = BLOCK.
 
 Supported feeds (Ethereum mainnet, default ETH/USD): ETH/USD
@@ -56,6 +59,7 @@ maxAge is your policy. ETH/USD heartbeat is about 45-50 minutes.
 
 What BLOCK means
 ----------------
+
 Do not act. Reasons include: stale or future timestamp, updatedAt == 0,
 answer <= 0, incomplete round (answeredInRound < roundId), wrong chainId
 for the feed, unknown feed, bad RPC, or invalid input.
@@ -64,6 +68,5 @@ Source: https://docs.chain.link/data-feeds/api-reference
 
 Contribute
 ----------
-See CONTRIBUTING.md.
 
- 
+See CONTRIBUTING.md.
