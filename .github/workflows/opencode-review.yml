@@ -7,7 +7,6 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
-    if: github.actor != 'dependabot[bot]'
     permissions:
       id-token: write
       contents: read
