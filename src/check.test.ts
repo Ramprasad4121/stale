@@ -18,13 +18,15 @@ function mockClient(opts: {
   seqAnswer?: bigint;
   seqStartedAt?: bigint;
 }): Pick<PublicClient, "readContract"> & { getChainId?: PublicClient["getChainId"] } {
-  const client: Pick<PublicClient, "readContract"> & { getChainId?: PublicClient["getChainId"] } = {
+  const client: Pick<PublicClient, "readContract" | "multicall"> & {
+    getChainId?: PublicClient["getChainId"];
+  } = {
     readContract: (async ({ address, functionName }: { address: string; functionName: string }) => {
       if (functionName === "latestRoundData") {
         if (
-          address === "0xFdB631F5EE196F0ed6FAa767959853A9F217697D" ||
-          address === "0x371EAD81c9102C9BF4874A9075FFFf170F2Ee389" ||
-          address === "0xBCF85224fc0756B9Fa45aA7892530B47e10b6433"
+          address.toLowerCase() === "0xfdb631f5ee196f0ed6faa767959853a9f217697d" ||
+          address.toLowerCase() === "0x371ead81c9102c9bf4874a9075ffff170f2ee389" ||
+          address.toLowerCase() === "0xbcf85224fc0756b9fa45aa7892530b47e10b6433"
         ) {
           return [1n, opts.seqAnswer ?? 0n, opts.seqStartedAt ?? 1n, 1n, 1n] as const;
         }
@@ -44,6 +46,19 @@ function mockClient(opts: {
       }
       throw new Error(`unexpected ${functionName}`);
     }) as unknown as PublicClient["readContract"],
+    multicall: (async ({ contracts }: { contracts: any[] }) => {
+      return Promise.all(
+        contracts.map(async (c) => {
+          try {
+            // @ts-ignore
+            const res = await client.readContract(c);
+            return { status: "success", result: res };
+          } catch (error) {
+            return { status: "failure", error };
+          }
+        }),
+      );
+    }) as unknown as PublicClient["multicall"],
   };
   if (opts.chainId !== undefined) {
     client.getChainId = async () => {
@@ -302,11 +317,14 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
     assert.equal(rRpc.decision, "BLOCK");
     assert.match(rRpc.reason, /missing rpc/);
 
-    // malformed readContract throws generic → BLOCK
+    // malformed readContract/multicall throws generic → BLOCK
     const badClient = {
       readContract: (async () => {
         throw new Error("malformed response: unexpected tuple");
       }) as unknown as PublicClient["readContract"],
+      multicall: (async () => {
+        throw new Error("malformed response: unexpected tuple");
+      }) as unknown as PublicClient["multicall"],
     };
     const rMal = await checkPrice({
       rpc: RPC,
@@ -316,7 +334,7 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
       __client: badClient,
     });
     assert.equal(rMal.decision, "BLOCK");
-    assert.match(rMal.reason, /failed to read/);
+    assert.match(rMal.reason, /failed to read|multicall failed/);
 
     // invalid maxAge → BLOCK
     const rPolicy = await checkPrice({
@@ -383,5 +401,24 @@ describe("checkPrice (mocked viem, no live RPC)", () => {
       }),
     });
     assert.equal(r.decision, "ALLOW");
+  });
+});
+
+describe("checkPrices multicall", () => {
+  it("should check multiple feeds in one go", async () => {
+    const { checkPrices } = await import("./check.js");
+    const res = await checkPrices({
+      rpc: RPC,
+      feeds: [
+        { feed: FEED, maxAgeSeconds: 3600 },
+        { feed: BTC_FEED, maxAgeSeconds: 3600 },
+      ],
+      nowSeconds: NOW,
+      __client: mockClient({ answer: 300000000000n, updatedAt: BigInt(NOW - 10), decimals: 8 }),
+    });
+
+    assert.equal(res.length, 2);
+    assert.equal(res[0].decision, "ALLOW");
+    assert.equal(res[1].decision, "ALLOW");
   });
 });
