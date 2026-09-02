@@ -16,9 +16,12 @@ export { lookupFeed } from "./feeds.js";
 export { calculateMinAmountOut, type CalculateMinAmountOutInput } from "./slippage.js";
 export {
   checkApproval,
+  checkAllowance,
   type CheckApprovalInput,
+  type CheckAllowanceInput,
   type AllowanceGuardrailResult,
 } from "./allowance.js";
 export { checkGasPrice, type CheckGasPriceInput, type GasGuardrailResult } from "./gas.js";
 export { checkBalance, type CheckBalanceInput, type SolvencyGuardrailResult } from "./solvency.js";
 export { checkPaused, type CheckPausedInput, type PausableGuardrailResult } from "./pausable.js";
+export { simulateTx, type SimulateTxInput, type SimulateGuardrailResult } from "./simulate.js";
