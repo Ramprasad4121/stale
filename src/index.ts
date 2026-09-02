@@ -13,3 +13,4 @@ export {
   type DexGuardrailResult,
 } from "./dex.js";
 export { lookupFeed } from "./feeds.js";
+export { calculateMinAmountOut, type CalculateMinAmountOutInput } from "./slippage.js";
