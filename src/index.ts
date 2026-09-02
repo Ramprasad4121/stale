@@ -67,3 +67,8 @@ export {
   type PipelineResult,
   type PipelineConfig,
 } from "./pipeline.js";
+export {
+  checkTokenTax,
+  type CheckTokenTaxInput,
+  type HoneypotGuardrailResult,
+} from "./honeypot.js";
