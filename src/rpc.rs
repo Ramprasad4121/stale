@@ -23,6 +23,21 @@ use std::sync::Arc;
 /// A single `eth_call` / `eth_getBlockByNumber` result is a few KB;
 /// anything larger is a misbehaving or malicious endpoint.
 pub const MAX_RPC_RESPONSE_BYTES: usize = 1024 * 1024;
+
+/// SSRF guard: is `rpc_url`'s host in `allowed_hosts`? An EMPTY allowlist
+/// means "no restriction" (legacy behavior, documented on the flag).
+/// Comparison is on the parsed host, case-insensitive — never on the raw
+/// string — so credentials, ports, paths, and casing cannot smuggle a host.
+pub fn is_rpc_host_allowed(rpc_url: &str, allowed_hosts: &[String]) -> bool {
+    if allowed_hosts.is_empty() {
+        return true;
+    }
+    let host = match url::Url::parse(rpc_url) {
+        Ok(u) => u.host_str().unwrap_or("").to_lowercase(),
+        Err(_) => return false,
+    };
+    allowed_hosts.iter().any(|h| h.to_lowercase() == host)
+}
 #[async_trait]
 /// Abstract EVM JSON-RPC transport.
 ///
@@ -68,6 +83,7 @@ pub trait EvmRpcClient: Send + Sync {
 pub struct HttpRpcClient {
     rpc_url: String,
     client: reqwest::Client,
+    allowed_hosts: Vec<String>,
 }
 
 impl HttpRpcClient {
@@ -79,7 +95,18 @@ impl HttpRpcClient {
             .timeout(std::time::Duration::from_secs(10))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
-        Self { rpc_url, client }
+        Self {
+            rpc_url,
+            client,
+            allowed_hosts: Vec::new(),
+        }
+    }
+
+    /// Restrict egress to `hosts` (exact, case-insensitive). Empty means
+    /// unrestricted. Combine with HTTPS policy: both must pass.
+    pub fn with_allowed_hosts(mut self, hosts: Vec<String>) -> Self {
+        self.allowed_hosts = hosts;
+        self
     }
 
     /// Validate the configured RPC URL.
@@ -156,6 +183,12 @@ impl HttpRpcClient {
         params: serde_json::Value,
     ) -> Result<serde_json::Value, String> {
         self.validate_url()?;
+        if !is_rpc_host_allowed(&self.rpc_url, &self.allowed_hosts) {
+            return Err(
+                "RPC host not in allowlist — BLOCK (fail closed). Pass --allowed-rpc-hosts."
+                    .to_string(),
+            );
+        }
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -409,5 +442,45 @@ mod tests {
         assert_eq!(strip_hex_prefix("0xabc"), "abc");
         assert_eq!(strip_hex_prefix("0Xabc"), "abc");
         assert_eq!(strip_hex_prefix("abc"), "abc");
+    }
+
+    #[test]
+    fn test_allowlist_empty_means_open() {
+        assert!(is_rpc_host_allowed("https://anything.example/rpc", &[]));
+    }
+
+    #[test]
+    fn test_allowlist_exact_match_case_insensitive() {
+        let allowed = vec!["Ethereum-RPC.PublicNode.com".to_string()];
+        assert!(is_rpc_host_allowed(
+            "https://ethereum-rpc.publicnode.com",
+            &allowed
+        ));
+        assert!(!is_rpc_host_allowed("https://evil.com", &allowed));
+    }
+
+    #[test]
+    fn test_allowlist_ignores_credentials_port_path() {
+        let allowed = vec!["rpc.example.com".to_string()];
+        assert!(is_rpc_host_allowed(
+            "https://user:pass@rpc.example.com:8443/v1?apiKey=x",
+            &allowed
+        ));
+        assert!(!is_rpc_host_allowed(
+            "https://rpc.example.com.evil.com",
+            &allowed
+        ));
+        assert!(!is_rpc_host_allowed("not a url", &allowed));
+    }
+
+    #[tokio::test]
+    async fn test_allowlist_denied_blocks_before_network() {
+        let client = HttpRpcClient::new("https://evil.example/rpc")
+            .with_allowed_hosts(vec!["good.example".to_string()]);
+        let err = client
+            .call("0x0000000000000000000000000000000000000000", "0x")
+            .await
+            .unwrap_err();
+        assert!(err.contains("allowlist"), "got: {}", err);
     }
 }

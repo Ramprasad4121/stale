@@ -125,7 +125,8 @@ async fn main() {
                                     "feed": { "type": "string", "description": "Data Feed proxy address" },
                                     "maxAgeSeconds": { "type": "integer", "description": "Max allowed age in seconds" },
                                     "amountEth": { "type": "number", "description": "Human ETH amount for quote" },
-                                    "nowSeconds": { "type": "integer", "description": "Override now timestamp" }
+                                    "nowSeconds": { "type": "integer", "description": "Override now timestamp" },
+                                    "allowedRpcHosts": { "type": "array", "items": { "type": "string" }, "description": "Egress allowlist for the RPC URL host (SSRF guard). Unset = unrestricted." }
                                 },
                                 "required": ["rpc", "feed", "maxAgeSeconds"]
                             }
@@ -309,8 +310,19 @@ async fn main() {
                         };
                         let amount_eth = args.get("amountEth").and_then(|v| v.as_f64());
                         let now_seconds = args.get("nowSeconds").and_then(|v| v.as_i64());
+                        let allowed_hosts: Vec<String> = args
+                            .get("allowedRpcHosts")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|h| h.as_str())
+                                    .map(|h| h.trim().to_string())
+                                    .filter(|h| !h.is_empty())
+                                    .collect()
+                            })
+                            .unwrap_or_default();
 
-                        let client = HttpRpcClient::new(rpc);
+                        let client = HttpRpcClient::new(rpc).with_allowed_hosts(allowed_hosts);
                         let res = check_price(
                             &client,
                             CheckPriceInput {

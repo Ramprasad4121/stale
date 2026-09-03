@@ -80,7 +80,7 @@ pub use pipeline::{
 };
 pub use quote::{quote_from_feed, QuoteInput, QuoteResult};
 pub use ratelimit::{RateLimiter, SpendingCap};
-pub use rpc::{EvmRpcClient, HttpRpcClient};
+pub use rpc::{is_rpc_host_allowed, EvmRpcClient, HttpRpcClient};
 pub use sanctions::{check_sanctioned, SANCTIONS_ORACLE};
 pub use sequencer::check_sequencer;
 pub use simulate::{simulate_tx, SimulateTxInput};
@@ -109,7 +109,7 @@ pub mod prelude {
     };
     pub use crate::quote::{quote_from_feed, QuoteInput};
     pub use crate::ratelimit::{RateLimiter, SpendingCap};
-    pub use crate::rpc::{EvmRpcClient, HttpRpcClient};
+    pub use crate::rpc::{is_rpc_host_allowed, EvmRpcClient, HttpRpcClient};
     pub use crate::sanctions::check_sanctioned;
     pub use crate::sequencer::check_sequencer;
     pub use crate::simulate::{simulate_tx, SimulateTxInput};

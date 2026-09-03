@@ -51,6 +51,10 @@ enum Commands {
         amount: Option<f64>,
         #[arg(long)]
         json: bool,
+        /// Comma-separated RPC hosts allowed for egress (SSRF guard).
+        /// Unset = unrestricted (legacy).
+        #[arg(long)]
+        allowed_rpc_hosts: Option<String>,
     },
     /// Test staleness calculation without RPC
     IsStale {
@@ -93,8 +97,9 @@ async fn main() {
             feed,
             amount,
             json,
+            allowed_rpc_hosts,
         }) => {
-            run_check(&rpc, max_age, &feed, amount, json).await;
+            run_check(&rpc, max_age, &feed, amount, json, allowed_rpc_hosts).await;
         }
         Some(Commands::IsStale {
             updated_at,
@@ -132,7 +137,7 @@ async fn main() {
         }
         None => {
             if let (Some(rpc), Some(max_age)) = (cli.rpc, cli.max_age) {
-                run_check(&rpc, max_age, &cli.feed, cli.amount, cli.json).await;
+                run_check(&rpc, max_age, &cli.feed, cli.amount, cli.json, None).await;
             } else {
                 eprintln!("Error: missing required arguments --rpc and --max-age");
                 eprintln!("Run `stale --help` for usage information.");
@@ -142,8 +147,24 @@ async fn main() {
     }
 }
 
-async fn run_check(rpc: &str, max_age: i64, feed: &str, amount: Option<f64>, json: bool) {
-    let client = HttpRpcClient::new(rpc);
+/// Parse `--allowed-rpc-hosts a,b` into a host list. Exported for reuse.
+pub fn parse_allowed_hosts(raw: Option<String>) -> Vec<String> {
+    raw.unwrap_or_default()
+        .split(',')
+        .map(|h| h.trim().to_string())
+        .filter(|h| !h.is_empty())
+        .collect()
+}
+
+async fn run_check(
+    rpc: &str,
+    max_age: i64,
+    feed: &str,
+    amount: Option<f64>,
+    json: bool,
+    allowed_rpc_hosts: Option<String>,
+) {
+    let client = HttpRpcClient::new(rpc).with_allowed_hosts(parse_allowed_hosts(allowed_rpc_hosts));
     let res = check_price(
         &client,
         CheckPriceInput {
