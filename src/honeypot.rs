@@ -1,3 +1,11 @@
+//! Honeypot / transferability probe.
+//!
+//! Simulates `transfer(DEAD, amount)` via `eth_call(from = holder)`.
+//! Success proves *transferability*, not *fair taxation*: fee-on-transfer,
+//! sell-tax, and buy-ok/sell-block tokens can still pass. Treat ALLOW as
+//! "not an outright honeypot" and compose with tax measurement for pricing.
+//! Any revert/transport error → BLOCK (fail closed).
+
 use crate::abi::{encode_address_param, encode_u256_param};
 use crate::addressbook::is_valid_eth_address;
 use crate::rpc::EvmRpcClient;
@@ -6,6 +14,8 @@ use crate::types::GuardrailResult;
 pub const TRANSFER_SELECTOR: &str = "0xa9059cbb";
 pub const DEAD_ADDRESS: &str = "0x000000000000000000000000000000000000dEaD";
 
+/// Probe `token.transfer(dead, amount)` from `holder`. `amount == 0`
+/// is rejected (vacuous simulation). See module caveats.
 pub async fn check_token_tax(
     client: &dyn EvmRpcClient,
     token: &str,

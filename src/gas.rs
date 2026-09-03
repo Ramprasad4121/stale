@@ -1,6 +1,13 @@
+//! Gas circuit breaker: BLOCK when `eth_gasPrice` exceeds policy.
+//!
+//! Comparison is integer (`u128` wei); the `f64` gwei value in the reason
+//! string is display-only.
+
 use crate::rpc::EvmRpcClient;
 use crate::types::GuardrailResult;
 
+/// BLOCK if network gas price exceeds `max_gas_price_gwei` (or on RPC
+/// failure). `max_gas_price_gwei == 0` is rejected as misconfiguration.
 pub async fn check_gas_price(
     client: &dyn EvmRpcClient,
     max_gas_price_gwei: u64,

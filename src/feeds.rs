@@ -1,3 +1,9 @@
+//! Static Chainlink registry: feed proxies + L2 sequencer uptime feeds.
+//!
+//! Addresses are matched case-insensitively by [`lookup_feed`]. Adding a
+//! feed is a registry change: address, symbol, chain id, tests, and the
+//! SECURITY doc update together.
+
 use serde::{Deserialize, Serialize};
 
 pub const MAINNET_CHAIN_ID: u64 = 1;
@@ -15,6 +21,7 @@ pub const BTC_USD_FEED: &str = "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c";
 pub const USDC_USD_FEED: &str = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// One allowlisted feed proxy: checksummed address, pair symbol, chain id.
 pub struct FeedEntry {
     pub address: &'static str,
     pub symbol: &'static str,
@@ -99,6 +106,7 @@ pub const REGISTRY: &[FeedEntry] = &[
     },
 ];
 
+/// Sequencer uptime feed for an L2 chain, or `None` (mainnet / unknown).
 pub fn get_sequencer_feed(chain_id: u64) -> Option<&'static str> {
     match chain_id {
         ARBITRUM_CHAIN_ID => Some("0xFdB631F5EE196F0ed6FAa767959853A9F217697D"),
@@ -112,6 +120,8 @@ pub fn get_sequencer_feed(chain_id: u64) -> Option<&'static str> {
     }
 }
 
+/// Case-insensitive registry lookup. `None` → caller emits BLOCK
+/// ("unknown feed / not allowlisted").
 pub fn lookup_feed(address: &str) -> Option<&'static FeedEntry> {
     let lower = address.to_lowercase();
     REGISTRY.iter().find(|e| e.address.to_lowercase() == lower)

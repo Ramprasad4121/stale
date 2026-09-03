@@ -1,4 +1,18 @@
+//! Integer slippage engine: `minAmountOut` from oracle prices + bps.
+//!
+//! Pure integer math (no `f64`): `raw = amountIn * priceIn / priceOut`
+//! rescaled across token/oracle decimals, then `min = raw * (1 - slip)`.
+//! Every step is checked — any overflow fails closed with `Err` (→ BLOCK).
+//!
+//! A zero result is rejected: `minAmountOut == 0` downstream authorizes
+//! total-loss fills.
+
 use serde::{Deserialize, Serialize};
+
+/// Max supported decimal exponent diff. `10^38` already exceeds `u128::MAX`
+/// (`≈3.4e38`), so anything above 38 cannot scale without overflow — the
+/// `checked_pow` below enforces this; the constant documents intent.
+pub const MAX_EXP_DIFF: u32 = 38;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CalculateMinAmountOutInput {
@@ -15,7 +29,16 @@ pub struct CalculateMinAmountOutInput {
     pub slippage_bps: u32,
 }
 
+/// Compute `minAmountOut` (all amounts in base units).
+///
+/// # Errors
+/// `Err` on zero prices, `slippage_bps > 10000`, `slippage_bps == 10000`
+/// (100% allows total loss), `amount_in == 0`, zero/exponent-overflow
+/// results. Callers map `Err` → `BLOCK`.
 pub fn calculate_min_amount_out(input: CalculateMinAmountOutInput) -> Result<u128, String> {
+    if input.amount_in == 0 {
+        return Err("amount_in must be > 0 (zero input yields zero output) — BLOCK".to_string());
+    }
     if input.price_in_answer == 0 {
         return Err("price_in_answer must be > 0".to_string());
     }
@@ -43,7 +66,7 @@ pub fn calculate_min_amount_out(input: CalculateMinAmountOutInput) -> Result<u12
     let raw_amount_out = if exp_diff >= 0 {
         let exp_u32: u32 = u32::try_from(exp_diff)
             .ok()
-            .filter(|&e| e <= 77)
+            .filter(|&e| e <= MAX_EXP_DIFF)
             .ok_or_else(|| "decimal exponent out of range".to_string())?;
         let scale = 10u128
             .checked_pow(exp_u32)
@@ -65,9 +88,13 @@ pub fn calculate_min_amount_out(input: CalculateMinAmountOutInput) -> Result<u12
             .checked_add(term2)
             .ok_or_else(|| "overflow in raw_amount_out".to_string())?
     } else {
-        let exp_u32: u32 = u32::try_from(exp_diff.checked_neg().unwrap_or(i64::MIN))
+        // exp_diff < 0 here (checked above), so negation cannot overflow.
+        let neg = exp_diff.checked_neg().ok_or_else(|| {
+            "overflow in decimal exponent negation (unreachable) — BLOCK".to_string()
+        })?;
+        let exp_u32: u32 = u32::try_from(neg)
             .ok()
-            .filter(|&e| e <= 77)
+            .filter(|&e| e <= MAX_EXP_DIFF)
             .ok_or_else(|| "decimal exponent out of range".to_string())?;
         let scale = 10u128
             .checked_pow(exp_u32)
@@ -83,6 +110,12 @@ pub fn calculate_min_amount_out(input: CalculateMinAmountOutInput) -> Result<u12
         .checked_mul(factor)
         .ok_or_else(|| "overflow in slippage factor".to_string())?
         / 10000;
+
+    if min_amount_out == 0 {
+        return Err(
+            "computed minAmountOut is 0 (dust input or extreme decimals) — BLOCK".to_string(),
+        );
+    }
 
     Ok(min_amount_out)
 }
@@ -172,6 +205,37 @@ mod tests {
             price_out_answer: 100,
             price_out_decimals: 8,
             slippage_bps: 10000,
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn test_zero_amount_in_rejected() {
+        assert!(calculate_min_amount_out(CalculateMinAmountOutInput {
+            amount_in: 0,
+            token_in_decimals: 18,
+            price_in_answer: 100,
+            price_in_decimals: 8,
+            token_out_decimals: 18,
+            price_out_answer: 100,
+            price_out_decimals: 8,
+            slippage_bps: 50,
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn test_dust_yielding_zero_output_rejected() {
+        // 1 wei through a 1:1e18 price ratio truncates to 0 → must Err, not Ok(0).
+        assert!(calculate_min_amount_out(CalculateMinAmountOutInput {
+            amount_in: 1,
+            token_in_decimals: 18,
+            price_in_answer: 1,
+            price_in_decimals: 8,
+            token_out_decimals: 18,
+            price_out_answer: 1_000_000_000_000_000_000,
+            price_out_decimals: 8,
+            slippage_bps: 0,
         })
         .is_err());
     }

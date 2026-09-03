@@ -1,3 +1,13 @@
+//! Protocol pause guard (`paused()`).
+//!
+//! # Revert semantics (read this)
+//! A revert is interpreted as "contract does not implement `paused()`" →
+//! ALLOW. That is fail-open *for this guard in isolation*: a malicious
+//! contract could implement `paused(){ revert }` to force ALLOW. Mitigate
+//! by composing with an allowlist (`AddressBook`) + bytecode check
+//! (`check_is_contract`) so unknown contracts never reach this guard.
+//! Malformed returns and transport errors always BLOCK.
+
 use crate::abi::decode_bool;
 use crate::addressbook::is_valid_eth_address;
 use crate::rpc::EvmRpcClient;
@@ -5,6 +15,9 @@ use crate::types::GuardrailResult;
 
 pub const PAUSED_SELECTOR: &str = "0x5c975abb";
 
+/// Require `contract` to be unpaused. Revert → ALLOW (no `paused()`
+/// interface; see module caveats). `paused == true` / decode / transport
+/// failure → BLOCK.
 pub async fn check_paused(client: &dyn EvmRpcClient, contract: &str) -> GuardrailResult {
     if !is_valid_eth_address(contract) {
         return GuardrailResult::block(format!("invalid contract address {} — BLOCK", contract));

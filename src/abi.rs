@@ -1,3 +1,20 @@
+//! Minimal ABI codec for the selectors `stale` needs.
+//!
+//! # Bounds
+//! - `uint256` values are decoded to `u128`; on-chain values above
+//!   `u128::MAX` (e.g. `type(uint256).max` approvals) FAIL with an overflow
+//!   error instead of truncating. Callers needing full 256-bit range must
+//!   use a U256 path (see `check_approval` docs).
+//! - `int256` values are decoded to `i128` with strict two's-complement
+//!   validation; out-of-range values fail closed.
+//! - Single-word decoders accept trailing words (multivalue returns read by
+//!   offset); [`decode_round_data`] requires exactly 5 words.
+
+/// ABI-encode an `address` param as one 32-byte word (lowercased hex).
+///
+/// # Errors
+/// `Err` unless the input is `0x` + exactly 40 hex chars (overlong input
+/// is rejected, never truncated).
 pub fn encode_address_param(addr: &str) -> Result<String, String> {
     let clean = addr
         .trim()
@@ -15,10 +32,17 @@ pub fn encode_address_param(addr: &str) -> Result<String, String> {
     Ok(format!("{:0>64}", clean.to_lowercase()))
 }
 
+/// ABI-encode a `uint256` param from a `u128`.
+///
+/// Values above `u128::MAX` cannot be represented — this is a deliberate
+/// bound (see module docs), not silent truncation.
 pub fn encode_u256_param(val: u128) -> String {
     format!("{:0>64x}", val)
 }
 
+/// Decode the `offset_words`-th 32-byte word as `u128`.
+///
+/// Accepts `0x`/`0X`/bare hex; `Err` on short input or values `> u128::MAX`.
 pub fn decode_word_u128(hex_str: &str, offset_words: usize) -> Result<u128, String> {
     let clean = hex_str
         .trim()
@@ -36,6 +60,10 @@ pub fn decode_word_u128(hex_str: &str, offset_words: usize) -> Result<u128, Stri
     u128::from_str_radix(slice, 16).map_err(|e| format!("failed to parse word u128: {}", e))
 }
 
+/// Decode the `offset_words`-th word as `i128` (two's complement).
+///
+/// Positive values require a zero upper half; negatives require an `0xff…`
+/// upper half with the sign bit set below. Out-of-`i128`-range `Err`s.
 pub fn decode_word_i128(hex_str: &str, offset_words: usize) -> Result<i128, String> {
     let clean = hex_str
         .trim()
@@ -84,11 +112,18 @@ pub fn decode_word_i128(hex_str: &str, offset_words: usize) -> Result<i128, Stri
     }
 }
 
+/// Decode a `bool` word: `0` → false, any nonzero → true (fail-closed
+/// direction for `paused`/`sanctioned` consumers).
 pub fn decode_bool(hex_str: &str) -> Result<bool, String> {
     let word = decode_word_u128(hex_str, 0)?;
     Ok(word != 0)
 }
 
+/// Decode Chainlink `latestRoundData()` →
+/// `(roundId, answer, startedAt, updatedAt, answeredInRound)`.
+///
+/// Requires exactly 5 words; `Err` otherwise (multivalue trailing-word
+/// tolerance does NOT apply here — round shape is consensus-critical).
 pub fn decode_round_data(hex_str: &str) -> Result<(u128, i128, u128, u128, u128), String> {
     let clean = hex_str
         .trim()

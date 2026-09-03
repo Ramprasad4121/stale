@@ -40,3 +40,9 @@ path = "src/bin/stale_mcp.rs"
 [lib]
 name = "stale"
 path = "src/lib.rs"
+
+[profile.release]
+overflow-checks = true
+
+[profile.dev]
+overflow-checks = true

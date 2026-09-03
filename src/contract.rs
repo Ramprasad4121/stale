@@ -1,7 +1,16 @@
+//! EOA / phishing guard: require deployed bytecode at the target.
+//!
+//! Blocks EOAs (empty code) and EIP-7702 delegated EOAs (`0xef0100…`),
+//! which are revocable delegations — not immutable contracts.
+
 use crate::addressbook::is_valid_eth_address;
 use crate::rpc::EvmRpcClient;
 use crate::types::GuardrailResult;
 
+/// Require `address` to host real contract bytecode (`eth_getCode`).
+///
+/// Besides `""`/`0x`, rejects `0x0`/`0x00…` (empty code with zero padding)
+/// and odd-length / non-hex payloads. Fail closed on transport error.
 pub async fn check_is_contract(client: &dyn EvmRpcClient, address: &str) -> GuardrailResult {
     if !is_valid_eth_address(address) {
         return GuardrailResult::block(format!("invalid address {} — BLOCK", address));
@@ -18,7 +27,16 @@ pub async fn check_is_contract(client: &dyn EvmRpcClient, address: &str) -> Guar
     };
 
     let trimmed = code.trim();
-    if trimmed.is_empty() || trimmed == "0x" || trimmed == "0X" {
+    let body = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+        .unwrap_or(trimmed);
+    // Empty, non-hex, odd-length, or all-zero code = EOA / no contract.
+    let is_empty_code = body.is_empty()
+        || body.len() % 2 != 0
+        || !body.chars().all(|c| c.is_ascii_hexdigit())
+        || body.chars().all(|c| c == '0');
+    if is_empty_code {
         return GuardrailResult::block(format!(
             "PHISHING DANGER: address {} is an EOA (Externally Owned Account) with no bytecode. Do not approve or route funds to EOAs. — BLOCK",
             address
@@ -62,6 +80,18 @@ mod tests {
         let res = check_is_contract(&mock, "0x95222290DD7278Aa3Ddd389Cc1E1d165CC4BAfe5").await;
         assert!(!res.allow_execute);
         assert!(res.reason.contains("PHISHING DANGER"));
+    }
+
+    #[tokio::test]
+    async fn test_zero_padded_empty_code_blocked() {
+        for code in ["0x00", "0x0000", "0x000000"] {
+            let mock = MockRpcClient {
+                code: Some(code.to_string()),
+                ..Default::default()
+            };
+            let res = check_is_contract(&mock, "0x95222290DD7278Aa3Ddd389Cc1E1d165CC4BAfe5").await;
+            assert!(!res.allow_execute, "code {} must BLOCK", code);
+        }
     }
 
     #[tokio::test]

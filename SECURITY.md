@@ -1,205 +1,171 @@
 # Security Policy for stale
 
-`stale` is a fail-closed guardrail. It does not make economic decisions and it
-does not execute transactions. This document describes what it trusts, what it
-does not trust, and how it fails.
+`stale` is a fail-closed Rust guardrail library for autonomous AI agents.
+It does not make economic decisions and it does not execute transactions.
+This document describes what it trusts, what it does not trust, and how it fails.
 
 ## Summary
 
-`stale` answers one question: is the Chainlink price this agent is about to
-act on fresh enough under the caller's `maxAgeSeconds` policy?
+`stale` answers one question: is the on-chain state this agent is about to
+act on safe enough under the caller's policy?
 
-- `ALLOW` means the price passed every freshness and validity check.
+- `ALLOW` means the checks passed under the stated policy.
 - `BLOCK` means do not proceed. Notify the human and stop.
 
-`allowExecute` is permission state only. It is not an execution mechanism.
+`allow_execute` is permission state only. It is not an execution mechanism.
+The invariant `allow_execute == (decision == Allow)` is upheld by the
+constructors; values deserialized from untrusted JSON should be evaluated
+via `GuardrailResult::is_allowed()` / `is_blocked()`, not the raw flag.
 
 ## Trust boundaries
 
-- **Trusted:** Chainlink Data Feed proxies on the allowlist in `src/feeds.ts`
-  (ETH/USD and BTC/USD, Ethereum mainnet only), their
-  `PriceFeedAggregator` `latestRoundData()` and `decimals()`, the `viem`
-  `PublicClient` `eth_call` path, and the local clock (`nowSeconds`).
-- **Untrusted:** RPC responses, `updatedAt`, `answer`, `decimals`, `feed`
-  address strings, `maxAgeSeconds`, `amountEth`, and any human or agent that
-  calls `checkPrice` with a permissive policy. All are validated and fail
-  closed.
-- **Feed allowlist:** only ETH/USD `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419`
-  and BTC/USD `0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c` on Ethereum
-  mainnet are supported (source:
-  https://docs.chain.link/data-feeds/price-feeds/addresses#ethereum-mainnet).
-  `checkPrice` fails closed on any valid-format address not in the registry
-  (`unknown/unsupported feed`). Adding a feed is a registry change with
-  tests and this doc updated.
+- **Trusted:** the caller's policy values (`maxAgeSeconds`, thresholds,
+  allowlists), the local clock only as an input to fail-closed math, and
+  the Chainlink feed / contract addresses in the caller's allowlist.
+- **Untrusted:** every byte from RPC responses (`answer`, `updatedAt`,
+  `decimals`, round ids, bytecode, gas price, nonces), the RPC endpoint
+  itself, URL strings, and any human or agent that calls a guard with a
+  permissive policy. All are validated and fail closed.
+- **Feed allowlist:** `check_price` only queries feeds in `src/feeds.rs`
+  (`REGISTRY`, matched case-insensitively). Any valid-format address not in
+  the registry fails closed (`unknown feed / not allowlisted`). Adding a
+  feed is a registry change with tests and this doc updated.
 
 ## Chainlink assumptions
 
 - Data Feeds: `latestRoundData()` returns
   `(uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt,
-uint80 answeredInRound)` and `decimals()` returns `uint8`.
-  `updatedAt` is seconds since epoch (uint80, but fits in 53 bits for the
-  `age = now - updatedAt` math). `answer` is `int256` scaled by `10**decimals`.
-- Never hardcode `decimals`. `stale` fetches it on-chain via `decimals()`
-  and uses `viem` `formatUnits(answer, decimals)` for `priceUsd`. Source:
-  https://docs.chain.link/data-feeds/api-reference and
-  https://docs.chain.link/data-feeds/price-feeds/addresses#ethereum-mainnet.
-- Do not assume `updatedAt` is always increasing, always recent, or always
-  present. `updatedAt == 0` means no data yet → `BLOCK`.
-- Do not assume `answer` is always positive. `answer <= 0` → `BLOCK`.
-- Round completeness (AggregatorV3): `latestRoundData` returns `roundId` and
-  `answeredInRound`. If `answeredInRound < roundId` the round is incomplete /
-  unanswered → `BLOCK` with `allowExecute:false` even if `updatedAt` looks
-  fresh. `stale` (Node `checkPrice` and CRE `onCron`) requires
-  `answeredInRound >= roundId` per
-  https://docs.chain.link/data-feeds/api-reference; `startedAt` is not used
-  for freshness. Remaining policy (heartbeat, deviation) stays in `ROADMAP`.
-- Chain binding: every allowlisted feed (ETH/USD `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419`, BTC/USD `0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c`) is Ethereum mainnet only via chainId 1 in the registry. Node `checkPrice` calls `eth_chainId` (viem `getChainId`) after `createPublicClient({chain: mainnet})` and `BLOCK`s if `chainId !== 1` with `chainId mismatch` reason; mocks without `getChainId` skip the check.
-- Heartbeat: ETH/USD on mainnet updates roughly every 45–50 minutes (Chainlink heartbeat). `maxAgeSeconds` is caller policy — `maxAge 60` will `BLOCK` most of the time even when the DON is healthy. Staging `3600` vs production `60` in `cre/workflows/stale/config.*.json` is intentional (simulate `ALLOW` vs strict production); do not silently change production.
-- Proxy/aggregator behavior: the proxy forwards to the current aggregator.
-  A stale proxy still returns whatever the aggregator last wrote. `stale`
-  does not try to detect proxy upgrades — it checks the timestamp it actually
-  sees.
+  uint80 answeredInRound)` and `decimals()` returns `uint8`.
+- Never hardcode `decimals`. `stale` reads it on-chain and rejects values
+  above 36.
+- `updatedAt == 0` means no data yet → `BLOCK`.
+- `answer <= 0` → `BLOCK`.
+- Round completeness: `answeredInRound < roundId` means the round is
+  incomplete / unanswered → `BLOCK`, even if `updatedAt` looks fresh.
+  `startedAt` is not used for freshness (except the sequencer grace period).
+- `updatedAt` values above `i64::MAX` are rejected as unrepresentable
+  instead of being silently wrapped via `as` casts.
+- Chain binding: L2 feeds additionally enforce sequencer liveness (below).
+  `check_price` does not itself verify `eth_chainId` against the feed's
+  registry chain — compose with `check_chain_id` when chain confusion is in
+  scope.
+
+## L2 sequencer policy
+
+- Chains with a configured uptime feed (`get_sequencer_feed`) require
+  `answer == 0` (up) **and** age past `GRACE_PERIOD_SECONDS` (3600s) since
+  `startedAt`. Down, unknown status, incomplete round, missing data, future
+  `startedAt`, and grace-period restarts all → `BLOCK`.
+- Transport / decode failure → `BLOCK` (fail closed).
 
 ## RPC assumptions
 
-- `checkPrice({ rpc })` uses `viem` `createPublicClient({ chain: mainnet,
-transport: http(rpc) })` + `readContract` (`eth_call`). No wallet, no
-  signing, no `eth_sendTransaction`.
-- Any RPC failure, malformed response, or unexpected structure → `BLOCK`.
-  `stale` never replaces a failed read with cached data and never turns an
-  operational failure into `ALLOW`.
-- Public RPCs (e.g. `https://ethereum-rpc.publicnode.com`, `https://1rpc.io/eth`)
-  may `429` or `301`. `429` → `BLOCK` with `reason` containing the RPC error
-  (truncated to 200 chars in CLI). Use a private, rate-limited RPC for
-  production if you need higher availability.
-- `isStale` and `quoteFromFeed` do not touch the network and have no RPC
-  assumptions.
+- Transport: `HttpRpcClient` (`reqwest` + rustls, 10s timeout). No wallet,
+  no signing, no `eth_sendTransaction` anywhere in the crate.
+- **HTTPS mandatory** except loopback (`localhost`, `127.0.0.0/8`, `::1`),
+  matched on the *parsed host* — never by string prefix — so
+  `http://localhost.evil.com` is rejected.
+- Responses are capped at 1 MiB before JSON parsing (OOM bound against
+  malicious endpoints).
+- The configured URL (which may embed an API key) is redacted from every
+  surfaced error, including credential and query fragments.
+- Any RPC failure, malformed response, or unexpected shape → `BLOCK`.
+  `stale` never substitutes cached data and never turns an operational
+  failure into `ALLOW`.
+- Hex parsing accepts `0x`/`0X`/bare; `eth_getCode` empty / zero-padded /
+  malformed code is treated as EOA → `BLOCK`.
 
 ## Clock assumptions
 
-- `nowSeconds` defaults to `Math.floor(Date.now() / 1000)`. Clock skew or a
-  future `updatedAt` (`age < 0`) → `BLOCK` as `not-yet-valid`. This also
-  covers the case where the local clock is behind the chain.
-- Staleness is `age = now - updatedAt`. No NTP sync is assumed. If you need
-  stronger clock guarantees, run your own time source and pass `nowSeconds`
-  explicitly (as `cre` does via `Math.floor(Date.now()/1000)` in the workflow).
+- `nowSeconds` defaults to `chrono::Utc::now()`. A future `updatedAt`
+  (`age < 0`) → `BLOCK` as `not-yet-valid`, covering local-clock-behind-chain
+  skew. Negative caller clocks → `BLOCK`.
+- No NTP sync is assumed. Pass `now_seconds` explicitly when you run your
+  own time source.
 
 ## Precision and overflow
 
-- `priceUsd = Number(formatUnits(answer, decimals))`. `answer` is `int256`,
-  `decimals` is `0-36`. `formatUnits` returns a decimal string, then `Number`
-  may lose precision for very large `answer` (beyond 53 bits). For `ETH/USD`
-  `answer ≈ 2.5e11` (8 decimals, ~$2500) this is safe. For feeds with larger
-  `answer` or `decimals`, test the conversion and consider keeping `answer`
-  as `bigint` until you need `priceUsd`.
-- `quoteUsd = amountEth * priceUsd` where `amountEth` is a JS `number`.
-  `amountEth` must be finite and `>= 0`; else `quoteFromFeed` throws and the
-  caller gets `BLOCK`. `NaN`, `Infinity`, negative, or huge values are
-  rejected. No overflow check beyond `Number.isFinite`.
-- `priceUsd` and `quoteUsd` are convenience display values in v1, not
-  settlement-grade amounts. They use `formatUnits` followed by JavaScript
-  `Number` arithmetic; exact decimal-string math is deferred to a later PR.
+- `quote_from_feed` (`priceUsd` / `quoteUsd`) is `f64` **display math, not
+  settlement math**: `answer as f64` rounds beyond 2⁵³. For 8-decimal feeds
+  at current prices this is cent-exact; for settlement, keep integers and
+  use `calculate_min_amount_out`, which is pure checked-`u128` math.
+- `calculate_min_amount_out` rejects `amount_in == 0`, 100% slippage, dust
+  that truncates to zero output, exponent diffs above 38, and every
+  overflow (`Err` → caller emits `BLOCK`).
+- Release **and** dev profiles enable `overflow-checks = true`; arithmetic
+  uses `checked_*` throughout.
+- `uint256` values are decoded to `u128`. On-chain values above `u128::MAX`
+  (including literal `type(uint256).max` approvals) fail closed at decode
+  time — the safe direction, surfaced as a decode-failure `BLOCK`. Full
+  `U256` support is tracked work; see `src/allowance.rs` docs.
+- `int256` values decode to `i128` with strict two's-complement validation;
+  out-of-range values → `BLOCK`.
 
-## Configuration risks
+## Guard-specific caveats
 
-- `maxAgeSeconds` is required, no default. The caller must choose. A permissive
-  `maxAgeSeconds` (e.g. `86400`) will `ALLOW` a price that is a day old.
-  Staging is `3600` so a local `cre workflow simulate` can `ALLOW` (on-chain
-  age is ~2800s); production stays `60`. Document your policy and test it.
-- `feed` must be `0x` + 40 hex and must be on the allowlist
-  (ETH/USD or BTC/USD mainnet from `src/feeds.ts`). An attacker-controlled
-  `feed` can return any `answer`/`updatedAt`; `stale` fails closed on any
-  address not in the allowlist, so callers can only pass official proxies.
-  Do not accept `feed` from untrusted input.
-- `amountEth` is human units. A large `amountEth` with a stale `priceUsd`
-  still `BLOCK`s, but a large `quoteUsd` that is then used for economics
-  without further checks can cause loss. `stale` only gates freshness.
-
-## Stale-data and malformed-data handling
-
-All of these → `BLOCK` with `ageSeconds: null` or a negative `ageSeconds`:
-
-- missing, `null`, `undefined`, `""`, whitespace-only, or non-numeric `updatedAt`
-- `updatedAt` as `bigint`, `number`, or hex/decimal string that fails to parse
-- `updatedAt == 0`, `answer <= 0`, `decimals` not integer `0-36`, `amountEth` not finite `>=0`
-- `age < 0` (future) → `not-yet-valid`
-- `age > maxAgeSeconds` → `stale`
-- RPC/read failure, malformed `eth_call` response, unexpected tuple shape
-
-No path silently recovers with a cached price. No path turns an operational
-failure into `ALLOW`.
+- `check_paused`: a revert is read as "no `paused()` interface" → `ALLOW`.
+  A malicious contract could `revert` to force that path, so compose with
+  `AddressBook` + `check_is_contract` for unknown targets.
+- `check_token_tax`: success proves *transferability*, not fair taxation.
+  Fee-on-transfer / sell-tax tokens can pass; measure tax separately.
+- `check_pool_v2` / `check_pool_v3`: spot depth at `latest` is flash-loan
+  manipulable and unauthenticated. Require allowlisted pools + TWAP/deviation.
+- `check_price_deviation`: checks round *completeness*, not *freshness*.
+  Pair with an explicit `maxAge` policy.
+- `check_nonce`: requires exact equality; ahead *or* behind → `BLOCK`.
+- `simulate_tx` / `check_allowance` / `check_balance`: check-then-act
+  advisories. State can move before broadcast — bind with deadlines,
+  slippage limits, and private mempools.
+- `RateLimiter` / `SpendingCap`: in-memory, `&mut self` (share via `Mutex`
+  across tasks), reset on restart, capped at 100k entries. Use atomic
+  `try_acquire` / `try_spend`; manual `check` + `record` is TOCTOU.
+- `GuardPipeline`: per-guard timeout (default 15s) + panic isolation turn
+  hangs and panics into `BLOCK`s attributed to that guard. Max 64 guards.
+- `AuditLogger`: bounded FIFO (`VecDeque`); `Some(0)` capacity coerces to 1.
+  Callbacks are panic-isolated but synchronous — keep them non-blocking.
+- `check_mev_rpc`: host-allowlisted private builders, `https` required
+  except loopback dev endpoints.
 
 ## MCP risks
 
-- MCP server `src/mcp/server.ts` is `stdio` only (`McpServer` +
-  `StdioServerTransport` from `@modelcontextprotocol/server@2.0.0`, `zod@4`
-  for `inputSchema`). No HTTP, no SSE.
-- Tools: `stale_isStale` (pure, no RPC), `stale_quote` (price math, no RPC),
-  `stale_check` (full `checkPrice` via `viem`, no wallet). All delegate to
-  the same `src/` core (`isStale` → `quoteFromFeed` → `checkPrice`); no
-  duplicated freshness logic.
-- Read-only: no wallet, no private key, no signing, no `eth_sendTransaction`,
-  no `broadcast`, no `Aave`/`CCIP`/`x402`/Agents execution.
-- Input validation is `zod` on the MCP boundary; internal `isStale` still
-  fail-closed on `bigint|number|string` even if the MCP layer already
-  rejected `number`/`bigint` for `updatedAt` (which is `z.string()` only to
-  avoid JSON `bigint` loss). This double layer is intentional.
+- `stale-mcp` is stdio line-delimited JSON-RPC only. No HTTP, no SSE.
+- Tools: `stale_isStale` (pure), `stale_quote` (math only), `stale_check`
+  (full `check_price`, no wallet). All delegate to the same core.
+- **BLOCK contract:** a `BLOCK` verdict is `result.content[0].text` JSON
+  **with `isError: true`**. Agents must treat `isError == true` as "do not
+  execute" — checking only the absence of a protocol `error` is a fail-open
+  integration bug.
+- `maxAgeSeconds` is required with no silent default; a missing value is an
+  `isError` rejection, not `maxAge 0`.
+- Each request line is capped at 1 MiB.
+- Read-only: no private key, no signing, no broadcast.
 
 ## CLI risks
 
-- `src/cli.ts` uses `node:util` `parseArgs` (`strict:true`,
-  `allowPositionals:false`). Unknown flags → error. Missing `--rpc` or
-  `--maxAge` → `BLOCK` exit 1. Bad `--amount` → `BLOCK` exit 1.
-- Human mode prints `DECISION — reason`, `feed`/`answer`/`updatedAt`/`age`,
-  `priceUsd`/`quoteUsd`, then `notify:` and `execute: skipped` or
-  `execute: {"action":"none","note":"v3 dry-run. no tx. no Agents call."}`.
-  `--json` prints only the JSON object (same shape as `checkPrice`) and exits
-  `0` on `ALLOW`, `1` on `BLOCK`. No JSON pollution.
-- Notify errors are truncated to 200 chars to bound `reason` length.
-
-## CRE risks
-
-- `cre/` is a separate CRE project (official TypeScript SDK `1.19.1`, `cron`
-  trigger as `read-data-feeds-ts` template, `chain-read` only). It reuses
-  `cre/lib/isStale.ts` and `cre/lib/quote.ts` vendored with `keep in sync`
-  headers — the CRE WASM build cannot import `../../src`.
-- Config: `cre/workflows/stale/config.staging.json` (`maxAgeSeconds: 3600`)
-  and `config.production.json` (`60`), `cre/project.yaml` `rpcs:` for
-  `ethereum-mainnet`. Staging `3600` allows local `ALLOW`; production `60`
-  is the real policy.
-- Simulation: `cd cre && cre workflow simulate workflows/stale --target
-staging-settings --non-interactive --trigger-index 0 --allow-insecure-rpc`
-  (without `--non-interactive` the CLI can hang; `429` → `BLOCK`; no private
-  key, no `--broadcast`, no `cre workflow deploy` without explicit human
-  approval). Currently verified through local simulation, not yet running
-  inside the DON — production DON deployment is separate.
-- No `EVMClient` writes, no wallet, no signing. The workflow returns a JSON
-  string via `safeJsonStringify` with `allowExecute` and `execute` dry-run
-  note, same shape as CLI `--json`.
+- `stale check --rpc … --max-age … [--feed …] [--amount …] [--json]`.
+  Human mode prints decision/reason/price; `--json` prints the result object.
+  Exit `0` on `ALLOW`, `1` on `BLOCK` or usage error.
+- `stale is-stale --updated-at … --max-age … [--now …]`, `stale quote`,
+  `stale feeds` are offline except `check`.
 
 ## Dependency and supply-chain risks
 
-- Runtime: `viem@2.56.1` (from `^2.21.0`), `zod@4.5.4` (from `^4.0.0`),
-  `@modelcontextprotocol/server@2.0.0` + `client@2.0.0` (for MCP stdio tests).
-  `cre` pins `@chainlink/cre-sdk@1.19.1`, `viem@2.34.0`, `zod@3.25.76` in
-  `cre/workflows/stale/package.json` (separate lockfile).
-- Avoid floating `@latest` in security-sensitive paths. `package-lock.json`
-  and `cre/bun.lock` / `cre/workflows/stale/bun.lock` pin exact versions.
-- Published package (`files: ["dist", "README.md", "LICENSE"]`) contains only
-  `dist/` JS/d.ts/maps, `README.md`, `LICENSE`, and `package.json` (verified via
-  `npm pack --dry-run`). No `src/*.test.ts`, `AGENTS.md`,
-  `LINUS.md`, `.env`, `node_modules`, or `cre` build artifacts.
+- Runtime: `tokio`, `serde`/`serde_json`, `reqwest` (rustls-tls only, no
+  default features), `clap` (derive), `hex`, `async-trait`, `chrono`, `url`.
+- Avoid adding network or crypto dependencies in guard paths without review.
+  `Cargo.lock` handling follows the repo's library convention;
+  `cargo package` must stay clean (only `src/`, `tests/`, `examples/`,
+  `Cargo.toml`, `README.md`, `LICENSE` per `include`).
 
 ## Fail-closed semantics
 
-Every public entry — `isStale`, `quoteFromFeed`, `checkPrice`, `stale` CLI,
-`stale-mcp` tools, and the CRE `onCron` handler — is fail-closed. The only
-way to get `ALLOW` and `allowExecute:true` is to pass _every_ check with a
-fresh, valid `updatedAt` and `answer`. Any doubt → `BLOCK`.
+Every public entry — `is_stale`, `quote_from_feed`, `check_price`,
+`check_prices`, all guards, the CLI, `stale-mcp` tools, and
+`GuardPipeline::run` — is fail-closed. The only way to get `ALLOW` and
+`allow_execute: true` is to pass *every* check. Any doubt → `BLOCK`.
 
-Never claim stronger guarantees than the implementation. If a new check is
-added (e.g. round validation, heartbeat, deviation), it needs a reason, an
-implementation, tests, docs, and an update to this file.
+Never claim stronger guarantees than the implementation. A new check needs
+a reason, an implementation, tests, docs, and an update to this file.
 
 ## Reporting a vulnerability
 

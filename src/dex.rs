@@ -1,3 +1,12 @@
+//! DEX liquidity guards: Uniswap V2 reserves / V3 active liquidity.
+//!
+//! # Manipulation caveat
+//! Spot reserves/liquidity at `latest` are flash-loan manipulable and this
+//! module performs no pool authentication. Compose with an allowlisted pool
+//! (`crate::addressbook::AddressBook`) + TWAP/deviation policy; treat a bare
+//! ALLOW here as "depth exists right now", not "price is fair". Any
+//! RPC/decode failure → BLOCK.
+
 use crate::abi::decode_word_u128;
 use crate::addressbook::is_valid_eth_address;
 use crate::rpc::EvmRpcClient;
@@ -7,6 +16,7 @@ use serde_json::json;
 pub const V2_GET_RESERVES_SELECTOR: &str = "0x0902f1ac";
 pub const V3_LIQUIDITY_SELECTOR: &str = "0x1a686502";
 
+/// Require V2 `reserve0 >= min_reserve0 && reserve1 >= min_reserve1`.
 pub async fn check_pool_v2(
     client: &dyn EvmRpcClient,
     pool: &str,
@@ -82,6 +92,7 @@ pub async fn check_pool_v2(
     }))
 }
 
+/// Require V3 `liquidity() >= min_liquidity`.
 pub async fn check_pool_v3(
     client: &dyn EvmRpcClient,
     pool: &str,
