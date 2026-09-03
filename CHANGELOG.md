@@ -23,6 +23,10 @@
 - PR #43: RPC parsed-host validation, 1 MiB response cap; pipeline per-guard timeout + panic isolation + `MAX_GUARDS`; atomic rate-limiter acquisition + history cap; audit FIFO; nonce exact-equality; `check_prices` bounded at 64; release/dev `overflow-checks=true`.
 - This PR: honeypot `false`-return → BLOCK (fee-on-transfer); sanctions chain gate; audit-log secret scrub; zero `unwrap()` in binaries.
 
+### New Guards
+
+- `check_gas_price_1559(client, max_base_fee_gwei, max_priority_fee_gwei)`: EIP-1559 circuit breaker enforcing base fee and tip independently. New `EvmRpcClient::{get_base_fee, get_priority_fee}` have fail-closed default bodies (`Err`), so external transports are never silently treated as 1559-capable.
+
 ## 1.0.0
 
 ### Major Changes

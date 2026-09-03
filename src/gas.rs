@@ -42,6 +42,67 @@ pub async fn check_gas_price(
     }
 }
 
+/// EIP-1559 circuit breaker: BLOCK when `baseFeePerGas` exceeds
+/// `max_base_fee_gwei` OR `maxPriorityFeePerGas` exceeds
+/// `max_priority_fee_gwei` (or on RPC failure). Legacy `eth_gasPrice`
+/// underestimates congestion on 1559 chains because it blends the burned
+/// base fee with the tip; enforce both legs independently. Comparisons are
+/// integer (`u128` wei); `f64` gwei values are display-only.
+pub async fn check_gas_price_1559(
+    client: &dyn EvmRpcClient,
+    max_base_fee_gwei: u64,
+    max_priority_fee_gwei: u64,
+) -> GuardrailResult {
+    if max_base_fee_gwei == 0 || max_priority_fee_gwei == 0 {
+        return GuardrailResult::block(
+            "maxBaseFeeGwei and maxPriorityFeeGwei must be > 0 — BLOCK (fail closed)",
+        );
+    }
+
+    let base_fee_wei = match client.get_base_fee().await {
+        Ok(f) => f,
+        Err(e) => {
+            return GuardrailResult::block(format!(
+                "failed to fetch baseFeePerGas — BLOCK (fail closed): {}",
+                e
+            ));
+        }
+    };
+    let priority_fee_wei = match client.get_priority_fee().await {
+        Ok(f) => f,
+        Err(e) => {
+            return GuardrailResult::block(format!(
+                "failed to fetch maxPriorityFeePerGas — BLOCK (fail closed): {}",
+                e
+            ));
+        }
+    };
+
+    let max_base_wei = (max_base_fee_gwei as u128).saturating_mul(1_000_000_000);
+    let max_priority_wei = (max_priority_fee_gwei as u128).saturating_mul(1_000_000_000);
+
+    if base_fee_wei > max_base_wei {
+        return GuardrailResult::block(format!(
+            "baseFeePerGas {:.2} gwei exceeds maximum {} gwei — BLOCK",
+            base_fee_wei as f64 / 1_000_000_000.0,
+            max_base_fee_gwei
+        ));
+    }
+    if priority_fee_wei > max_priority_wei {
+        return GuardrailResult::block(format!(
+            "maxPriorityFeePerGas {:.2} gwei exceeds maximum {} gwei — BLOCK",
+            priority_fee_wei as f64 / 1_000_000_000.0,
+            max_priority_fee_gwei
+        ));
+    }
+
+    GuardrailResult::allow(format!(
+        "baseFee {:.2} gwei + priority {:.2} gwei within safe limits",
+        base_fee_wei as f64 / 1_000_000_000.0,
+        priority_fee_wei as f64 / 1_000_000_000.0
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,5 +150,64 @@ mod tests {
         let res = check_gas_price(&mock, 50).await;
         assert!(!res.allow_execute);
         assert!(res.reason.contains("failed to fetch network gas price"));
+    }
+
+    #[tokio::test]
+    async fn test_1559_within_limits() {
+        let mock = MockRpcClient {
+            base_fee: Some(20_000_000_000),    // 20 gwei
+            priority_fee: Some(1_000_000_000), // 1 gwei
+            ..Default::default()
+        };
+
+        let res = check_gas_price_1559(&mock, 50, 5).await;
+        assert!(res.allow_execute);
+    }
+
+    #[tokio::test]
+    async fn test_1559_base_fee_breach_blocks() {
+        let mock = MockRpcClient {
+            base_fee: Some(80_000_000_000),
+            priority_fee: Some(1_000_000_000),
+            ..Default::default()
+        };
+
+        let res = check_gas_price_1559(&mock, 50, 5).await;
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("baseFeePerGas"));
+    }
+
+    #[tokio::test]
+    async fn test_1559_priority_fee_breach_blocks() {
+        let mock = MockRpcClient {
+            base_fee: Some(20_000_000_000),
+            priority_fee: Some(10_000_000_000), // 10 gwei tip spike
+            ..Default::default()
+        };
+
+        let res = check_gas_price_1559(&mock, 50, 5).await;
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("maxPriorityFeePerGas"));
+    }
+
+    #[tokio::test]
+    async fn test_1559_missing_feed_blocks_fail_closed() {
+        let mock = MockRpcClient::default();
+
+        let res = check_gas_price_1559(&mock, 50, 5).await;
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("fail closed"));
+    }
+
+    #[tokio::test]
+    async fn test_1559_zero_policy_rejected() {
+        let mock = MockRpcClient {
+            base_fee: Some(1),
+            priority_fee: Some(1),
+            ..Default::default()
+        };
+
+        assert!(!check_gas_price_1559(&mock, 0, 5).await.allow_execute);
+        assert!(!check_gas_price_1559(&mock, 50, 0).await.allow_execute);
     }
 }

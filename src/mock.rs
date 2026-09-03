@@ -22,6 +22,8 @@ pub struct MockRpcClient {
     pub chain_id: Option<u64>,
     pub nonce: Option<u64>,
     pub gas_price: Option<u128>,
+    pub base_fee: Option<u128>,
+    pub priority_fee: Option<u128>,
     pub balance: Option<u128>,
     pub code: Option<String>,
 }
@@ -69,6 +71,16 @@ impl EvmRpcClient for MockRpcClient {
     async fn get_gas_price(&self) -> Result<u128, String> {
         self.gas_price
             .ok_or_else(|| "mock gas_price not configured".to_string())
+    }
+
+    async fn get_base_fee(&self) -> Result<u128, String> {
+        self.base_fee
+            .ok_or_else(|| "mock base_fee not configured".to_string())
+    }
+
+    async fn get_priority_fee(&self) -> Result<u128, String> {
+        self.priority_fee
+            .ok_or_else(|| "mock priority_fee not configured".to_string())
     }
 
     async fn get_balance(&self, _address: &str) -> Result<u128, String> {
