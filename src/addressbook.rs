@@ -15,7 +15,9 @@ pub struct AddressBook {
 
 impl AddressBook {
     /// Build from `label → address` pairs. `Err` on any invalid address.
-    /// `strict = true` is recommended (unknown → BLOCK).
+    /// `strict = true` is recommended (unknown → BLOCK). `strict = false`
+    /// is fail-open by configuration — discovery dry-runs only; prefer
+    /// [`AddressBook::new_strict`].
     pub fn new(allowlist: HashMap<String, String>, strict: bool) -> Result<Self, String> {
         let mut addresses = HashMap::new();
         for (label, addr) in allowlist {
@@ -25,6 +27,12 @@ impl AddressBook {
             addresses.insert(addr.to_lowercase(), label);
         }
         Ok(Self { addresses, strict })
+    }
+
+    /// Strict constructor: unknown addresses BLOCK. Prefer this over
+    /// `new(_, false)` everywhere except discovery dry-runs.
+    pub fn new_strict(allowlist: HashMap<String, String>) -> Result<Self, String> {
+        Self::new(allowlist, true)
     }
 
     /// Check `address`: invalid → BLOCK; known → ALLOW; unknown → BLOCK
@@ -105,5 +113,18 @@ mod tests {
         let res = book.check("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
         assert!(!res.allow_execute);
         assert!(res.reason.contains("UNKNOWN ADDRESS"));
+    }
+
+    #[test]
+    fn test_new_strict_blocks_unknown() {
+        let mut map = HashMap::new();
+        map.insert(
+            "USDC".to_string(),
+            "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".to_string(),
+        );
+        let book = AddressBook::new_strict(map).unwrap();
+
+        let res = book.check("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
+        assert!(!res.allow_execute);
     }
 }

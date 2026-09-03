@@ -12,6 +12,11 @@
 - `stale-mcp stale_isStale` errors on missing `nowSeconds`/`maxAgeSeconds` instead of defaulting to 0 (PR #41).
 - `AuditLogger::record` secret-scrubs reasons and metadata (embedded credentials become `<redacted>`) (this PR).
 
+### Breaking Changes (round 3)
+
+- `check_paused`: ANY revert now BLOCKs, including "contract does not implement `paused()`". The previous revert→ALLOW carve-out was fail-open in isolation (a malicious contract can `revert` to force ALLOW). Compose with `AddressBook` + `check_is_contract` so only known pausable contracts reach this guard.
+- `PipelineResult` gains `guards_skipped: Vec<String>` (omitted from JSON when empty): `FailFast` names every guard it did not execute, so audit trails never silently omit unevaluated guards.
+
 ### Security Fixes
 
 - PR #41: `is_stale`/`deadline` overflow → BLOCK; `updatedAt > i64::MAX` → BLOCK; negative `now` → BLOCK; decimals validity cap; sequencer unexpected-answer/incomplete-round → BLOCK; `pausable` malformed-response and RPC-error misclassification → BLOCK; slippage checked math; deviation self-comparison/stale-round → BLOCK; RPC 10s timeout, HTTPS-only (except localhost), URL redaction; `decode_round_data` exact-length check.

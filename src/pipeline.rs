@@ -50,6 +50,8 @@ pub struct GuardExecutionReport {
 #[serde(rename_all = "camelCase")]
 /// Aggregate preflight verdict. `decision` is `Block` if ANY guard blocked,
 /// timed out, or panicked. `blocked_by` names the first blocking guard.
+/// `guards_skipped` names guards never executed because `FailFast` stopped
+/// early — the audit trail is explicit about what did NOT run.
 pub struct PipelineResult {
     pub decision: Decision,
     pub reason: String,
@@ -59,6 +61,8 @@ pub struct PipelineResult {
     pub blocked_by: Option<String>,
     pub duration_ms: f64,
     pub results: Vec<GuardExecutionReport>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guards_skipped: Vec<String>,
 }
 
 /// Ordered, fail-closed guard runner. See module docs for liveness guarantees.
@@ -119,8 +123,9 @@ impl GuardPipeline {
         let mut blocked = false;
         let mut blocked_by = None;
         let mut block_reason = String::new();
+        let mut skipped: Vec<String> = Vec::new();
 
-        for (name, guard_fn) in &self.guards {
+        for (index, (name, guard_fn)) in self.guards.iter().enumerate() {
             let guard_start = Instant::now();
             // Spawn per guard: a panicking guard surfaces as JoinError
             // (converted to BLOCK below) instead of aborting preflight.
@@ -167,6 +172,9 @@ impl GuardPipeline {
                 }
 
                 if self.mode == PipelineMode::FailFast {
+                    // Name every guard that will NOT run so the audit
+                    // trail never silently omits unevaluated guards.
+                    skipped.extend(self.guards[index + 1..].iter().map(|(n, _)| n.clone()));
                     break;
                 }
             }
@@ -194,6 +202,7 @@ impl GuardPipeline {
             blocked_by,
             duration_ms: (total_duration * 100.0).round() / 100.0,
             results: reports,
+            guards_skipped: skipped,
         }
     }
 }
@@ -230,6 +239,26 @@ mod tests {
         assert_eq!(res.decision, Decision::Block);
         assert_eq!(res.guards_run, 2); // stopped at guard2
         assert_eq!(res.blocked_by, Some("guard2".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_fail_fast_names_skipped_guards() {
+        let mut pipeline = create_guard_pipeline(PipelineMode::FailFast, None);
+        pipeline.add("guard1", || async { GuardrailResult::allow("ok 1") });
+        pipeline.add("guard2", || async { GuardrailResult::block("failed at 2") });
+        pipeline.add("guard3", || async { GuardrailResult::allow("ok 3") });
+
+        let res = pipeline.run().await;
+        assert_eq!(res.guards_skipped, vec!["guard3".to_string()]);
+
+        // RunAll never skips: full trail, empty skipped list.
+        let mut full = create_guard_pipeline(PipelineMode::RunAll, None);
+        full.add("guard1", || async { GuardrailResult::allow("ok 1") });
+        full.add("guard2", || async { GuardrailResult::block("failed at 2") });
+        full.add("guard3", || async { GuardrailResult::allow("ok 3") });
+
+        let res = full.run().await;
+        assert!(res.guards_skipped.is_empty());
     }
 
     #[tokio::test]

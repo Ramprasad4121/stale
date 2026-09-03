@@ -1,12 +1,10 @@
 //! Protocol pause guard (`paused()`).
 //!
-//! # Revert semantics (read this)
-//! A revert is interpreted as "contract does not implement `paused()`" →
-//! ALLOW. That is fail-open *for this guard in isolation*: a malicious
-//! contract could implement `paused(){ revert }` to force ALLOW. Mitigate
-//! by composing with an allowlist (`AddressBook`) + bytecode check
-//! (`check_is_contract`) so unknown contracts never reach this guard.
-//! Malformed returns and transport errors always BLOCK.
+//! # Fail-closed invariant
+//! Real-world pause status queries must fail closed. If an RPC error occurs,
+//! or a contract reverts on `paused()` (e.g., non-standard or uninitialized
+//! contracts), `check_paused` returns `Decision::Block` to prevent unverified
+//! contract interaction. Malformed returns and transport errors also BLOCK.
 
 use crate::abi::decode_bool;
 use crate::addressbook::is_valid_eth_address;
@@ -15,9 +13,8 @@ use crate::types::GuardrailResult;
 
 pub const PAUSED_SELECTOR: &str = "0x5c975abb";
 
-/// Require `contract` to be unpaused. Revert → ALLOW (no `paused()`
-/// interface; see module caveats). `paused == true` / decode / transport
-/// failure → BLOCK.
+/// Require `contract` to be unpaused. Reverts, decode failures, and transport
+/// failures strictly fail closed (`Decision::Block`).
 pub async fn check_paused(client: &dyn EvmRpcClient, contract: &str) -> GuardrailResult {
     if !is_valid_eth_address(contract) {
         return GuardrailResult::block(format!("invalid contract address {} — BLOCK", contract));
@@ -36,27 +33,9 @@ pub async fn check_paused(client: &dyn EvmRpcClient, contract: &str) -> Guardrai
             }
         },
         Err(e) => {
-            let lower = e.to_lowercase();
-            // Contract without paused() reverts on call. Match only explicit
-            // revert indicators — never bare "0x", which matches almost any
-            // hex-containing transport error and would misclassify real
-            // RPC failures as ALLOW.
-            if lower.contains("revert")
-                || lower.contains("invalid opcode")
-                || lower.contains("function not found")
-                || lower.contains("unknown function")
-                || lower.contains("execution reverted")
-            {
-                return GuardrailResult::allow(format!(
-                    "contract {} does not implement paused() (call reverted) — safely ALLOW",
-                    contract
-                ));
-            }
-
-            // Real network / RPC transport errors MUST fail closed!
             return GuardrailResult::block(format!(
-                "failed to verify contract paused state due to RPC error — BLOCK (fail closed): {}",
-                e
+                "failed to verify contract paused state due to RPC error for {} — BLOCK (fail closed): {}",
+                contract, e
             ));
         }
     };
@@ -101,15 +80,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_contract_not_pausable_defaults_to_allow() {
+    async fn test_contract_revert_blocks_fail_closed() {
         let mock = MockRpcClient {
             call_handler: Some(Arc::new(move |_, _| Err("execution reverted".to_string()))),
             ..Default::default()
         };
 
         let res = check_paused(&mock, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").await;
-        assert!(res.allow_execute);
-        assert!(res.reason.contains("does not implement paused()"));
+        assert!(!res.allow_execute);
+        assert_eq!(res.decision, crate::types::Decision::Block);
+        assert!(res.reason.contains("fail closed"));
     }
 
     #[tokio::test]
