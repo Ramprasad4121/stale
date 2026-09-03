@@ -124,8 +124,6 @@ async fn main() {
 - **`check_rpc_sync`**: Checks that the RPC node's latest block timestamp is within acceptable drift of current time.
 - **`check_chain_id`**: Guards against cross-chain configuration mistakes.
 - **`check_nonce`**: Detects nonce desynchronization before broadcast.
-- **`check_gas_price`**: Blocks when legacy `eth_gasPrice` exceeds the gwei policy.
-- **`check_gas_price_1559`**: EIP-1559 circuit breaker enforcing `baseFeePerGas` and `maxPriorityFeePerGas` independently.
 
 ### Execution & Liquidity
 - **`calculate_min_amount_out`**: Derives integer slippage boundaries from oracle prices and basis points.
