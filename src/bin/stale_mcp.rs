@@ -1,9 +1,25 @@
+//! `stale-mcp`: stdio JSON-RPC/MCP server exposing guardrails to agents.
+//!
+//! # BLOCK contract (read this before integrating)
+//! A `BLOCK` verdict is returned as `result.content[0].text` (pretty JSON
+//! containing `"decision": "Block"`) **with `isError: true`**. Agents MUST
+//! treat `isError == true` as "do not execute" — checking only the absence
+//! of a protocol `error` field is a fail-open integration bug.
+//!
+//! # Input bounds
+//! Each stdin line is capped at [`MAX_MCP_LINE_BYTES`] (1 MiB); oversized
+//! lines yield a `-32600` error instead of buffering unbounded memory.
+
 use serde_json::{json, Value};
 use stale::check::{check_price, CheckPriceInput};
 use stale::is_stale::{is_stale, IsStaleInput};
 use stale::quote::{quote_from_feed, QuoteInput};
 use stale::rpc::HttpRpcClient;
+use stale::types::Decision;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+/// Max bytes per JSON-RPC request line (DoS bound).
+pub const MAX_MCP_LINE_BYTES: usize = 1024 * 1024;
 
 #[tokio::main]
 async fn main() {
@@ -12,6 +28,16 @@ async fn main() {
     let mut stdout = tokio::io::stdout();
 
     while let Ok(Some(line)) = reader.next_line().await {
+        if line.len() > MAX_MCP_LINE_BYTES {
+            let err_resp = json!({
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": { "code": -32600, "message": format!("request exceeds {} byte limit", MAX_MCP_LINE_BYTES) }
+            });
+            let _ = stdout.write_all(format!("{}\n", err_resp).as_bytes()).await;
+            let _ = stdout.flush().await;
+            continue;
+        }
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -163,6 +189,7 @@ async fn main() {
                             now_seconds,
                             max_age_seconds,
                         });
+                        let blocked = res.decision == Decision::Block;
 
                         json!({
                             "jsonrpc": "2.0",
@@ -171,7 +198,8 @@ async fn main() {
                                 "content": [{
                                     "type": "text",
                                     "text": serde_json::to_string_pretty(&res).unwrap()
-                                }]
+                                }],
+                                "isError": blocked
                             }
                         })
                     }
@@ -194,12 +222,12 @@ async fn main() {
                         };
                         let amount = args.get("amountEth").and_then(|v| v.as_f64());
 
-                        if decimals_raw > 18 {
+                        if decimals_raw > 36 {
                             let _ = stdout.write_all(format!("{}\n", json!({
                                 "jsonrpc": "2.0",
                                 "id": id,
                                 "result": {
-                                    "content": [{"type": "text", "text": "BLOCK — quote failed: invalid decimals (max 18)"}],
+                                    "content": [{"type": "text", "text": "BLOCK — quote failed: invalid decimals (max 36; query the feed's decimals() on-chain, never assume)"}],
                                     "isError": true
                                 }
                             })).as_bytes()).await;
@@ -207,7 +235,7 @@ async fn main() {
                             continue;
                         }
                         let decimals = decimals_raw as u8;
-                        let answer = match answer_str.parse::<i128>() {
+                        let answer = match parse_answer(answer_str) {
                             Ok(a) => a,
                             Err(_) => {
                                 let _ = stdout.write_all(format!("{}\n", json!({
@@ -253,10 +281,24 @@ async fn main() {
                     "stale_check" => {
                         let rpc = args.get("rpc").and_then(|v| v.as_str()).unwrap_or("");
                         let feed = args.get("feed").and_then(|v| v.as_str()).unwrap_or("");
-                        let max_age_seconds = args
+                        let max_age_seconds = match args
                             .get("maxAgeSeconds")
                             .and_then(|v| v.as_i64())
-                            .unwrap_or(0);
+                        {
+                            Some(n) => n,
+                            None => {
+                                let _ = stdout.write_all(format!("{}\n", json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": {
+                                        "content": [{"type": "text", "text": "BLOCK — missing maxAgeSeconds (no silent default; caller policy required)"}],
+                                        "isError": true
+                                    }
+                                })).as_bytes()).await;
+                                let _ = stdout.flush().await;
+                                continue;
+                            }
+                        };
                         let amount_eth = args.get("amountEth").and_then(|v| v.as_f64());
                         let now_seconds = args.get("nowSeconds").and_then(|v| v.as_i64());
 
@@ -271,6 +313,7 @@ async fn main() {
                             },
                         )
                         .await;
+                        let blocked = res.decision == Decision::Block;
 
                         json!({
                             "jsonrpc": "2.0",
@@ -279,7 +322,8 @@ async fn main() {
                                 "content": [{
                                     "type": "text",
                                     "text": serde_json::to_string_pretty(&res).unwrap()
-                                }]
+                                }],
+                                "isError": blocked
                             }
                         })
                     }
@@ -299,5 +343,17 @@ async fn main() {
 
         let _ = stdout.write_all(format!("{}\n", response).as_bytes()).await;
         let _ = stdout.flush().await;
+    }
+}
+
+/// Parse a decimal or `0x`/`0X` hex answer string into `i128`.
+fn parse_answer(s: &str) -> Result<i128, String> {
+    let t = s.trim();
+    if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+        // Signed hex: interpret via i128 two's complement if high bit set.
+        let u = u128::from_str_radix(hex, 16).map_err(|e| e.to_string())?;
+        Ok(u as i128)
+    } else {
+        t.parse::<i128>().map_err(|e| e.to_string())
     }
 }

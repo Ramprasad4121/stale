@@ -1,3 +1,16 @@
+//! Approval hygiene: exact-amount approvals + on-chain allowance reads.
+//!
+//! # `u128` bound (read this)
+//! Real ERC20 `allowance`/`approve` amounts are `uint256`. This module
+//! represents them as `u128`: on-chain values above `u128::MAX` fail closed
+//! at decode time, and [`check_approval`] treats `u128::MAX` / `>= 2^126`
+//! as infinite / dangerously large. A literal on-chain
+//! `type(uint256).max` (`2^256 - 1`) decodes as an overflow error → BLOCK,
+//! which is the safe direction but surfaces as "decode failure" rather
+//! than "infinite approval". Full-`U256` support is tracked work; until
+//! then, treat any decode-failure BLOCK on allowance paths as a block on
+//! unbounded approvals.
+
 use crate::abi::{decode_word_u128, encode_address_param};
 use crate::addressbook::is_valid_eth_address;
 use crate::rpc::EvmRpcClient;
@@ -9,6 +22,9 @@ pub const ALLOWANCE_SELECTOR: &str = "0xdd62ed3e";
 pub const MAX_U128: u128 = u128::MAX;
 pub const DANGEROUSLY_LARGE_U128: u128 = 1u128 << 126;
 
+/// Reject unbounded approvals: `amount == u128::MAX` (infinite) or
+/// `amount >= 2^126` (dangerously large) → BLOCK. Enforces exact-amount
+/// approvals so a compromised spender cannot drain the treasury.
 pub fn check_approval(token: &str, spender: &str, amount: u128) -> GuardrailResult {
     if !is_valid_eth_address(token) {
         return GuardrailResult::block(format!("invalid token address {} — BLOCK", token));
@@ -34,6 +50,9 @@ pub fn check_approval(token: &str, spender: &str, amount: u128) -> GuardrailResu
     GuardrailResult::allow(format!("approval to {} is a safe exact amount", spender))
 }
 
+/// Require on-chain `allowance(owner, spender) >= required_amount`.
+/// Check-then-act advisory: allowance can change before broadcast.
+/// Any RPC/decode failure → BLOCK.
 pub async fn check_allowance(
     client: &dyn EvmRpcClient,
     token: &str,

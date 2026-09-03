@@ -1,8 +1,16 @@
+//! Pure offline freshness math: `age = now - updatedAt` vs policy.
+//!
+//! No network. Fail closed on missing/negative `updatedAt`, negative
+//! `max_age_seconds`, arithmetic overflow, future timestamps
+//! (`age < 0` → `not-yet-valid`, covering local-clock-behind-chain skew),
+//! and `age > max_age_seconds` (stale).
+
 use crate::types::Decision;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Freshness verdict with observed `age_seconds` (`None` when unparseable).
 pub struct IsStaleResult {
     pub decision: Decision,
     pub age_seconds: Option<i64>,
@@ -10,6 +18,8 @@ pub struct IsStaleResult {
 }
 
 #[derive(Debug, Clone)]
+/// `updated_at`: feed `latestRoundData.updatedAt` (seconds). `None` → BLOCK.
+/// `now_seconds`: caller clock. `max_age_seconds`: caller policy (`>= 0`).
 pub struct IsStaleInput {
     pub updated_at: Option<i64>,
     pub now_seconds: i64,
@@ -18,6 +28,9 @@ pub struct IsStaleInput {
 
 /// Pure freshness check — no RPC. Fail closed on missing, unparseable, or future timestamp.
 /// Official field: Data Feed `latestRoundData.updatedAt` (uint80 seconds).
+///
+/// # Returns
+/// `Allow` iff `0 <= now - updatedAt <= max_age_seconds`.
 pub fn is_stale(input: IsStaleInput) -> IsStaleResult {
     if input.max_age_seconds < 0 {
         return IsStaleResult {

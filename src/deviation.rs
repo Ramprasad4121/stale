@@ -1,3 +1,17 @@
+//! Multi-oracle deviation guard: two independent feeds, one asset.
+//!
+//! Blocks when feeds disagree beyond `max_deviation_percent` — the
+//! standard defense against single-oracle (flash-loan) manipulation.
+//! Compares **normalized** prices (`answer / 10^decimals`), so feeds with
+//! different decimals are comparable. Rejects incomplete rounds and
+//! `updatedAt == 0` on either feed before comparing.
+//!
+//! # Staleness caveat
+//! This guard checks round *completeness*, not *freshness*: pass an
+//! explicit `maxAge` policy via `is_stale()` / `check_price()` alongside
+//! it. A fresh-vs-stale comparison can otherwise agree today
+//! and diverge tomorrow.
+
 use crate::abi::{decode_round_data, decode_word_u128};
 use crate::addressbook::is_valid_eth_address;
 use crate::rpc::EvmRpcClient;
@@ -7,6 +21,11 @@ use serde_json::json;
 pub const LATEST_ROUND_DATA_SELECTOR: &str = "0xfeaf968c";
 pub const DECIMALS_SELECTOR: &str = "0x313ce567";
 
+/// Compare two feeds; BLOCK if `|a-b|/avg*100 > max_deviation_percent`.
+/// Identical feeds, invalid/identical addresses, non-positive answers, or
+/// any RPC/decode failure → BLOCK. Deviation is `f64` display math — the
+/// *decision* threshold comparison is exact-direction (any `NaN`/non-finite
+/// → BLOCK).
 pub async fn check_price_deviation(
     client: &dyn EvmRpcClient,
     feed_a: &str,

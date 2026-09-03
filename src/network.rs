@@ -1,7 +1,18 @@
+//! Network & chain-state guards: RPC sync, chain identity, nonce coherence.
+//!
+//! All three are fail-closed point-in-time reads — see check-then-act
+//! caveats on each function.
+
 use crate::addressbook::is_valid_eth_address;
 use crate::rpc::EvmRpcClient;
 use crate::types::GuardrailResult;
 
+/// Fail closed if the RPC's latest block is older than
+/// `max_block_age_seconds` or timestamps a future block.
+///
+/// # Params
+/// - `max_block_age_seconds`: staleness bound, must be `> 0`.
+/// - `now_seconds`: caller clock (Unix seconds).
 pub async fn check_rpc_sync(
     client: &dyn EvmRpcClient,
     max_block_age_seconds: u64,
@@ -37,6 +48,8 @@ pub async fn check_rpc_sync(
     }
 }
 
+/// Require the RPC chain to equal `expected_chain_id` (replay guard).
+/// `expected_chain_id == 0` is rejected (no chain has id 0).
 pub async fn check_chain_id(client: &dyn EvmRpcClient, expected_chain_id: u64) -> GuardrailResult {
     if expected_chain_id == 0 {
         return GuardrailResult::block("invalid expectedChainId — BLOCK");
@@ -59,6 +72,11 @@ pub async fn check_chain_id(client: &dyn EvmRpcClient, expected_chain_id: u64) -
     }
 }
 
+/// Require `eth_getTransactionCount(agent, "pending") == expected_nonce`.
+///
+/// Any mismatch — ahead (prior tx confirmed / desync) OR behind (gap that
+/// will stick or fail) — BLOCKs. Callers must refresh the expected nonce
+/// after every broadcast; this is check-then-act advisory, not a lock.
 pub async fn check_nonce(
     client: &dyn EvmRpcClient,
     agent: &str,
@@ -75,9 +93,9 @@ pub async fn check_nonce(
         }
     };
 
-    if network_nonce > expected_nonce {
+    if network_nonce != expected_nonce {
         GuardrailResult::block(format!(
-            "STATE DESYNC: network nonce ({}) is higher than expected ({}). Previous transactions have confirmed. — BLOCK",
+            "STATE DESYNC: network nonce ({}) != expected ({}). Refresh nonce before broadcast. — BLOCK",
             network_nonce, expected_nonce
         ))
     } else {
@@ -151,6 +169,19 @@ mod tests {
     async fn test_nonce_desync() {
         let mock = MockRpcClient {
             nonce: Some(6),
+            ..Default::default()
+        };
+
+        let res = check_nonce(&mock, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", 5).await;
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("STATE DESYNC"));
+    }
+
+    #[tokio::test]
+    async fn test_nonce_behind_blocks_fail_closed() {
+        // Network behind expected = gap that would stick/fail; masks desync.
+        let mock = MockRpcClient {
+            nonce: Some(4),
             ..Default::default()
         };
 

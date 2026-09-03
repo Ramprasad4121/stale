@@ -1,3 +1,8 @@
+//! OFAC compliance guard via the Chainlink sanctions oracle.
+//!
+//! Any sanctioned hit, RPC failure, or decode failure → BLOCK. This is a
+//! point-in-time read, not legal advice; record the verdict in the audit log.
+
 use crate::abi::{decode_bool, encode_address_param};
 use crate::addressbook::is_valid_eth_address;
 use crate::rpc::EvmRpcClient;
@@ -7,6 +12,8 @@ pub const SANCTIONS_ORACLE: &str = "0x40C57923924B5c5c5455c48D93317139ADDaC8fb";
 /// Official Chainalysis / Chainlink Oracle isSanctioned(address) function selector
 pub const IS_SANCTIONED_SELECTOR: &str = "0xdf592f7d";
 
+/// BLOCK if `address` is sanctioned per [`SANCTIONS_ORACLE`].
+/// Fail closed on every error path.
 pub async fn check_sanctioned(client: &dyn EvmRpcClient, address: &str) -> GuardrailResult {
     if !is_valid_eth_address(address) {
         return GuardrailResult::block(format!("invalid address {} — BLOCK", address));

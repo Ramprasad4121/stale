@@ -1,3 +1,8 @@
+//! Solvency guard: native / ERC20 balance sufficiency.
+//!
+//! Check-then-act advisory (balance can move before broadcast). Any
+//! RPC/decode failure → BLOCK.
+
 use crate::abi::{decode_word_u128, encode_address_param};
 use crate::addressbook::is_valid_eth_address;
 use crate::rpc::EvmRpcClient;
@@ -5,6 +10,7 @@ use crate::types::GuardrailResult;
 
 pub const BALANCE_OF_SELECTOR: &str = "0x70a08231";
 
+/// Require `agent` balance (`token` ERC20 or native ETH) `>= required_amount`.
 pub async fn check_balance(
     client: &dyn EvmRpcClient,
     agent: &str,

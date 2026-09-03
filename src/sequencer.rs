@@ -1,13 +1,26 @@
+//! L2 sequencer liveness via Chainlink uptime feeds.
+//!
+//! Returns `None` (pass) only when the sequencer reports up (`answer == 0`)
+//! past the restart grace period ([`GRACE_PERIOD_SECONDS`]). Down, unknown
+//! status, incomplete round, missing data, future `startedAt`, grace-period
+//! restart, decode failure, and transport failure all yield `Some(reason)`
+//! — the caller maps every `Some` to BLOCK.
+
 use crate::abi::decode_round_data;
 use crate::feeds::get_sequencer_feed;
 use crate::rpc::EvmRpcClient;
 
 pub const SEQUENCER_SELECTOR: &str = "0xfeaf968c";
+/// Grace period after a sequencer restart during which reads still BLOCK.
 pub const GRACE_PERIOD_SECONDS: u64 = 3600;
 
 /// Validates L2 sequencer status using the official Chainlink Uptime Feed.
 /// Returns Ok(None) if L2 is up and past grace period, or if chain has no sequencer feed.
 /// Returns Ok(Some(reason)) or Err(reason) if sequencer is down, in grace period, or query failed.
+///
+/// # Params
+/// - `chain_id`: EVM chain id (non-L2 / unknown → `None`, no check).
+/// - `now_seconds`: caller clock (Unix seconds, `u64`).
 pub async fn check_sequencer(
     chain_id: u64,
     client: &dyn EvmRpcClient,

@@ -1,3 +1,10 @@
+//! Test-only mock transport.
+//!
+//! # Fidelity caveat
+//! `call_from` falls back to `call_handler` when no `call_from_handler` is
+//! set, silently ignoring `from`. Tests for `from`-dependent guards
+//! (honeypot, simulation) MUST set an explicit `call_from_handler`.
+
 use crate::rpc::EvmRpcClient;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -6,6 +13,7 @@ pub type CallHandler = Arc<dyn Fn(&str, &str) -> Result<String, String> + Send +
 pub type CallFromHandler = Arc<dyn Fn(&str, &str, &str) -> Result<String, String> + Send + Sync>;
 
 #[derive(Default, Clone)]
+/// In-memory mock. Every unset field errors on use (fail-closed tests).
 pub struct MockRpcClient {
     pub call_handler: Option<CallHandler>,
     pub call_from_handler: Option<CallFromHandler>,

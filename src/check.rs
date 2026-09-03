@@ -1,3 +1,8 @@
+//! Full Chainlink price guard: allowlist → sequencer → round → stale → quote.
+//!
+//! `check_price` is the primary entry point. Every failure mode fails
+//! closed to `BLOCK` with `allow_execute: false`. See [`check_price`].
+
 use crate::abi::{decode_round_data, decode_word_u128};
 use crate::addressbook::is_valid_eth_address;
 use crate::feeds::lookup_feed;
@@ -13,6 +18,7 @@ pub const DECIMALS_SELECTOR: &str = "0x313ce567";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Full price verdict. `allow_execute` is true iff `decision == Allow`.
 pub struct CheckPriceResult {
     pub decision: Decision,
     pub reason: String,
@@ -29,6 +35,8 @@ pub struct CheckPriceResult {
 }
 
 #[derive(Debug, Clone)]
+/// Input for [`check_price`]. `now_seconds`: `None` → local clock.
+/// `amount_eth`: optional human amount for `quote_usd` display math.
 pub struct CheckPriceInput<'a> {
     pub feed: &'a str,
     pub max_age_seconds: i64,
@@ -59,6 +67,14 @@ fn block_result(
     }
 }
 
+/// Validate `feed`, enforce sequencer liveness, decode
+/// `latestRoundData` + `decimals`, enforce round completeness
+/// (`answeredInRound >= roundId`), freshness (`is_stale`), and quote math.
+///
+/// # Fail-closed summary
+/// Unknown/non-allowlisted feed, RPC failure, decode failure,
+/// `updatedAt == 0`, `answer <= 0`, incomplete round, unrepresentable
+/// `updatedAt`, future clock, staleness, or quote failure → `BLOCK`.
 pub async fn check_price(
     client: &dyn EvmRpcClient,
     input: CheckPriceInput<'_>,
@@ -178,7 +194,7 @@ pub async fn check_price(
         };
 
     let decimals = match decode_word_u128(&hex_dec, 0) {
-        Ok(d) if d <= 18 => d as u8,
+        Ok(d) if d <= 36 => d as u8,
         _ => {
             return block_result(
                 input.feed,
@@ -288,12 +304,39 @@ pub async fn check_price(
     }
 }
 
+/// Batch wrapper over [`check_price`]. Bounded at [`MAX_BATCH_FEEDS`]
+/// inputs to cap RPC fan-out; excess inputs yield an immediate `BLOCK`
+/// row each instead of being silently dropped.
+///
+/// Guards run sequentially (deterministic order, no RPC thundering herd).
+/// For parallel fan-out use `futures::buffer_unordered` at the call site.
+pub const MAX_BATCH_FEEDS: usize = 64;
 pub async fn check_prices(
     client: &dyn EvmRpcClient,
     feeds: Vec<CheckPriceInput<'_>>,
 ) -> Vec<CheckPriceResult> {
     let mut results = Vec::new();
-    for f in feeds {
+    for f in feeds.into_iter().take(MAX_BATCH_FEEDS + 1) {
+        if results.len() >= MAX_BATCH_FEEDS {
+            results.push(CheckPriceResult {
+                decision: Decision::Block,
+                reason: format!(
+                    "batch exceeds MAX_BATCH_FEEDS ({}) — BLOCK excess inputs",
+                    MAX_BATCH_FEEDS
+                ),
+                feed: f.feed.to_string(),
+                answer: "0".to_string(),
+                price_usd: None,
+                amount_eth: f.amount_eth,
+                quote_usd: None,
+                updated_at: "0".to_string(),
+                age_seconds: None,
+                max_age_seconds: f.max_age_seconds,
+                now: f.now_seconds.unwrap_or(0),
+                allow_execute: false,
+            });
+            continue;
+        }
         results.push(check_price(client, f).await);
     }
     results

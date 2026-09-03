@@ -1,13 +1,22 @@
+//! Pre-flight execution simulation (`eth_call`).
+//!
+//! Revert → BLOCK. Check-then-act advisory: state can shift between
+//! simulation and broadcast (frontrun, slot churn). Bind outcomes with
+//! deadlines, slippage limits, and private mempools.
+
 use crate::addressbook::is_valid_eth_address;
 use crate::rpc::EvmRpcClient;
 use crate::types::GuardrailResult;
 
+#[derive(Debug, Clone)]
+/// `account`: simulation sender. `to`: target. `data`: calldata (`0x` if none).
 pub struct SimulateTxInput<'a> {
     pub account: &'a str,
     pub to: &'a str,
     pub data: Option<&'a str>,
 }
 
+/// Simulate via `eth_call(from, to, data)`. Any revert/transport error → BLOCK.
 pub async fn simulate_tx(client: &dyn EvmRpcClient, input: SimulateTxInput<'_>) -> GuardrailResult {
     if !is_valid_eth_address(input.account) {
         return GuardrailResult::block(format!(

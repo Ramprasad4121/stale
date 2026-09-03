@@ -1,3 +1,34 @@
+//! `stale`: fail-closed DeFi guardrails for autonomous AI agents.
+//!
+//! Before an agent signs and broadcasts, run pre-flight checks against
+//! on-chain state and oracle feeds. Any doubt → [`types::Decision::Block`].
+//!
+//! # Quickstart
+//! ```rust,no_run
+//! use stale::prelude::*;
+//! use stale::types::GuardrailResult;
+//! use std::collections::HashMap;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let rpc = HttpRpcClient::new("https://rpc.flashbots.net");
+//!     let mut allowlist = HashMap::new();
+//!     allowlist.insert("UNISWAP_V3_ROUTER".into(), "0xE592427A0AEce92De3Edee1F18E0157C05861564".into());
+//!     let book = AddressBook::new(allowlist, true)?;
+//!     let mut pipeline = create_guard_pipeline(PipelineMode::FailFast, None);
+//!     pipeline.add("address_book", || async { GuardrailResult::allow("ok") });
+//!     let report = pipeline.run().await;
+//!     assert_eq!(report.decision, Decision::Allow);
+//!     Ok(())
+//! }
+//! ```
+//!
+//! # Fail-closed contract
+//! Every guard returns [`types::GuardrailResult`] with
+//! `allow_execute == (decision == Allow)`. The only way to get `ALLOW` is
+//! to pass *every* check; RPC failures, decode failures, stale data, and
+//! misconfiguration all yield `BLOCK`.
+
 pub mod abi;
 pub mod addressbook;
 pub mod allowance;
@@ -43,7 +74,10 @@ pub use mev::{check_mev_rpc, MEV_PROTECTED_RPCS};
 pub use mock::MockRpcClient;
 pub use network::{check_chain_id, check_nonce, check_rpc_sync};
 pub use pausable::check_paused;
-pub use pipeline::{create_guard_pipeline, GuardPipeline, PipelineMode, PipelineResult};
+pub use pipeline::{
+    create_guard_pipeline, GuardExecutionReport, GuardPipeline, PipelineMode, PipelineResult,
+    DEFAULT_GUARD_TIMEOUT, MAX_GUARDS,
+};
 pub use quote::{quote_from_feed, QuoteInput, QuoteResult};
 pub use ratelimit::{RateLimiter, SpendingCap};
 pub use rpc::{EvmRpcClient, HttpRpcClient};
@@ -70,7 +104,9 @@ pub mod prelude {
     pub use crate::mev::check_mev_rpc;
     pub use crate::network::{check_chain_id, check_nonce, check_rpc_sync};
     pub use crate::pausable::check_paused;
-    pub use crate::pipeline::{create_guard_pipeline, GuardPipeline, PipelineMode};
+    pub use crate::pipeline::{
+        create_guard_pipeline, GuardPipeline, PipelineMode, DEFAULT_GUARD_TIMEOUT,
+    };
     pub use crate::quote::{quote_from_feed, QuoteInput};
     pub use crate::ratelimit::{RateLimiter, SpendingCap};
     pub use crate::rpc::{EvmRpcClient, HttpRpcClient};
@@ -82,6 +118,7 @@ pub mod prelude {
     pub use crate::types::{Decision, GuardrailResult};
 }
 
+/// Crate version (`CARGO_PKG_VERSION`).
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
