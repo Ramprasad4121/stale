@@ -5,6 +5,7 @@ use std::sync::Arc;
 #[async_trait]
 pub trait EvmRpcClient: Send + Sync {
     async fn call(&self, to: &str, data: &str) -> Result<String, String>;
+    async fn call_from(&self, from: &str, to: &str, data: &str) -> Result<String, String>;
     async fn get_block_number(&self) -> Result<u64, String>;
     async fn get_block_timestamp(&self) -> Result<u64, String>;
     async fn get_chain_id(&self) -> Result<u64, String>;
@@ -72,6 +73,18 @@ impl EvmRpcClient for HttpRpcClient {
     async fn call(&self, to: &str, data: &str) -> Result<String, String> {
         let res = self
             .send_rpc("eth_call", json!([{"to": to, "data": data}, "latest"]))
+            .await?;
+        res.as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| "expected hex string from eth_call".to_string())
+    }
+
+    async fn call_from(&self, from: &str, to: &str, data: &str) -> Result<String, String> {
+        let res = self
+            .send_rpc(
+                "eth_call",
+                json!([{"from": from, "to": to, "data": data}, "latest"]),
+            )
             .await?;
         res.as_str()
             .map(|s| s.to_string())

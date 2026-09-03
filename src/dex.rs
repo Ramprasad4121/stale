@@ -52,7 +52,11 @@ pub async fn check_pool_v2(
             "reserve0 {} < required {} on V2 pool {} — BLOCK",
             reserve0, min_reserve0, pool
         ))
-        .with_metadata(json!({ "reserve0": reserve0, "reserve1": reserve1, "pool": pool }));
+        .with_metadata(json!({
+            "reserve0": reserve0.to_string(),
+            "reserve1": reserve1.to_string(),
+            "pool": pool
+        }));
     }
 
     if reserve1 < min_reserve1 {
@@ -60,14 +64,22 @@ pub async fn check_pool_v2(
             "reserve1 {} < required {} on V2 pool {} — BLOCK",
             reserve1, min_reserve1, pool
         ))
-        .with_metadata(json!({ "reserve0": reserve0, "reserve1": reserve1, "pool": pool }));
+        .with_metadata(json!({
+            "reserve0": reserve0.to_string(),
+            "reserve1": reserve1.to_string(),
+            "pool": pool
+        }));
     }
 
     GuardrailResult::allow(format!(
         "V2 pool {} reserves meet minimum requirements",
         pool
     ))
-    .with_metadata(json!({ "reserve0": reserve0, "reserve1": reserve1, "pool": pool }))
+    .with_metadata(json!({
+        "reserve0": reserve0.to_string(),
+        "reserve1": reserve1.to_string(),
+        "pool": pool
+    }))
 }
 
 pub async fn check_pool_v3(
@@ -104,14 +116,20 @@ pub async fn check_pool_v3(
             "active liquidity {} < required {} on V3 pool {} — BLOCK",
             active_liquidity, min_liquidity, pool
         ))
-        .with_metadata(json!({ "liquidity": active_liquidity, "pool": pool }));
+        .with_metadata(json!({
+            "liquidity": active_liquidity.to_string(),
+            "pool": pool
+        }));
     }
 
     GuardrailResult::allow(format!(
         "V3 pool {} liquidity {} meets minimum requirements",
         pool, active_liquidity
     ))
-    .with_metadata(json!({ "liquidity": active_liquidity, "pool": pool }))
+    .with_metadata(json!({
+        "liquidity": active_liquidity.to_string(),
+        "pool": pool
+    }))
 }
 
 #[cfg(test)]

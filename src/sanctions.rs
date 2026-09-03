@@ -4,7 +4,8 @@ use crate::rpc::EvmRpcClient;
 use crate::types::GuardrailResult;
 
 pub const SANCTIONS_ORACLE: &str = "0x40C57923924B5c5c5455c48D93317139ADDaC8fb";
-pub const IS_SANCTIONED_SELECTOR: &str = "0x42966c68";
+/// Official Chainalysis / Chainlink Oracle isSanctioned(address) function selector
+pub const IS_SANCTIONED_SELECTOR: &str = "0xdf592f7d";
 
 pub async fn check_sanctioned(client: &dyn EvmRpcClient, address: &str) -> GuardrailResult {
     if !is_valid_eth_address(address) {
@@ -37,11 +38,11 @@ pub async fn check_sanctioned(client: &dyn EvmRpcClient, address: &str) -> Guard
 
     if is_sanctioned {
         GuardrailResult::block(format!(
-            "COMPLIANCE VIOLATION: address {} is heavily sanctioned — BLOCK",
+            "COMPLIANCE VIOLATION: address {} is sanctioned — BLOCK",
             address
         ))
     } else {
-        GuardrailResult::allow("address is compliant")
+        GuardrailResult::allow("address is compliant (not on sanctions list)")
     }
 }
 

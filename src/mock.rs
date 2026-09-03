@@ -3,10 +3,12 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 pub type CallHandler = Arc<dyn Fn(&str, &str) -> Result<String, String> + Send + Sync>;
+pub type CallFromHandler = Arc<dyn Fn(&str, &str, &str) -> Result<String, String> + Send + Sync>;
 
 #[derive(Default, Clone)]
 pub struct MockRpcClient {
     pub call_handler: Option<CallHandler>,
+    pub call_from_handler: Option<CallFromHandler>,
     pub block_number: Option<u64>,
     pub block_timestamp: Option<u64>,
     pub chain_id: Option<u64>,
@@ -20,6 +22,16 @@ pub struct MockRpcClient {
 impl EvmRpcClient for MockRpcClient {
     async fn call(&self, to: &str, data: &str) -> Result<String, String> {
         if let Some(ref handler) = self.call_handler {
+            handler(to, data)
+        } else {
+            Err("mock call handler not configured".to_string())
+        }
+    }
+
+    async fn call_from(&self, from: &str, to: &str, data: &str) -> Result<String, String> {
+        if let Some(ref handler) = self.call_from_handler {
+            handler(from, to, data)
+        } else if let Some(ref handler) = self.call_handler {
             handler(to, data)
         } else {
             Err("mock call handler not configured".to_string())

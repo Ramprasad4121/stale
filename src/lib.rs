@@ -63,7 +63,7 @@ pub mod prelude {
     pub use crate::deadline::{check_deadline, CheckDeadlineInput};
     pub use crate::deviation::check_price_deviation;
     pub use crate::dex::{check_pool_v2, check_pool_v3};
-    pub use crate::feeds::lookup_feed;
+    pub use crate::feeds::{lookup_feed, DEFAULT_FEED};
     pub use crate::gas::check_gas_price;
     pub use crate::honeypot::check_token_tax;
     pub use crate::is_stale::{is_stale, IsStaleInput};
@@ -75,6 +75,7 @@ pub mod prelude {
     pub use crate::ratelimit::{RateLimiter, SpendingCap};
     pub use crate::rpc::{EvmRpcClient, HttpRpcClient};
     pub use crate::sanctions::check_sanctioned;
+    pub use crate::sequencer::check_sequencer;
     pub use crate::simulate::{simulate_tx, SimulateTxInput};
     pub use crate::slippage::{calculate_min_amount_out, CalculateMinAmountOutInput};
     pub use crate::solvency::check_balance;

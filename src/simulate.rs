@@ -21,7 +21,7 @@ pub async fn simulate_tx(client: &dyn EvmRpcClient, input: SimulateTxInput<'_>) 
 
     let calldata = input.data.unwrap_or("0x");
 
-    match client.call(input.to, calldata).await {
+    match client.call_from(input.account, input.to, calldata).await {
         Ok(_) => GuardrailResult::allow("transaction simulation succeeded"),
         Err(e) => GuardrailResult::block(format!(
             "Simulation reverted! The transaction will fail on-chain. Do NOT execute. Revert reason: {}",

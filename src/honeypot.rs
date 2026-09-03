@@ -9,11 +9,14 @@ pub const DEAD_ADDRESS: &str = "0x000000000000000000000000000000000000dEaD";
 pub async fn check_token_tax(
     client: &dyn EvmRpcClient,
     token: &str,
-    _holder: &str,
+    holder: &str,
     amount: u128,
 ) -> GuardrailResult {
     if !is_valid_eth_address(token) {
         return GuardrailResult::block(format!("invalid token address {} — BLOCK", token));
+    }
+    if !is_valid_eth_address(holder) {
+        return GuardrailResult::block(format!("invalid holder address {} — BLOCK", holder));
     }
     if amount == 0 {
         return GuardrailResult::block("invalid amount 0 — BLOCK");
@@ -26,15 +29,21 @@ pub async fn check_token_tax(
         encode_u256_param(amount)
     );
 
-    match client.call(token, &calldata).await {
+    match client.call_from(holder, token, &calldata).await {
         Ok(_) => {
             GuardrailResult::allow("token transfer simulation succeeded — token is transferable")
         }
         Err(e) => {
-            if e.contains("revert") || e.contains("execution reverted") {
+            let lower = e.to_lowercase();
+            if lower.contains("exceeds balance") || lower.contains("insufficient balance") {
                 GuardrailResult::block(format!(
-                    "HONEYPOT DETECTED: token {} reverted on transfer simulation. This token cannot be sold or transferred. — BLOCK",
-                    token
+                    "cannot simulate transfer: holder {} does not hold required {} of token {} — BLOCK",
+                    holder, amount, token
+                ))
+            } else if lower.contains("revert") || lower.contains("execution reverted") {
+                GuardrailResult::block(format!(
+                    "HONEYPOT DETECTED: token {} reverted on transfer simulation from holder {}. This token cannot be sold or transferred. — BLOCK: {}",
+                    token, holder, e
                 ))
             } else {
                 GuardrailResult::block(format!(
