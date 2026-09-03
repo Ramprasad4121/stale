@@ -6,7 +6,7 @@
 //! "not an outright honeypot" and compose with tax measurement for pricing.
 //! Any revert/transport error → BLOCK (fail closed).
 
-use crate::abi::{encode_address_param, encode_u256_param};
+use crate::abi::{decode_bool, encode_address_param, encode_u256_param};
 use crate::addressbook::is_valid_eth_address;
 use crate::rpc::EvmRpcClient;
 use crate::types::GuardrailResult;
@@ -44,9 +44,19 @@ pub async fn check_token_tax(
     );
 
     match client.call_from(holder, token, &calldata).await {
-        Ok(_) => {
-            GuardrailResult::allow("token transfer simulation succeeded — token is transferable")
-        }
+        Ok(hex_data) => match decode_bool(&hex_data) {
+            Ok(true) => GuardrailResult::allow(
+                "token transfer simulation succeeded — token is transferable",
+            ),
+            Ok(false) => GuardrailResult::block(format!(
+                "HONEYPOT/FEE DETECTED: token {} returned false on transfer simulation from holder {} (fee-on-transfer or blocklisted) — BLOCK",
+                token, holder
+            )),
+            Err(e) => GuardrailResult::block(format!(
+                "failed to decode transfer simulation response for {} — BLOCK (fail closed): {}",
+                token, e
+            )),
+        },
         Err(e) => {
             let lower = e.to_lowercase();
             if lower.contains("exceeds balance") || lower.contains("insufficient balance") {
@@ -112,5 +122,45 @@ mod tests {
 
         assert!(!res.allow_execute);
         assert!(res.reason.contains("HONEYPOT DETECTED"));
+    }
+
+    #[tokio::test]
+    async fn test_transfer_false_return_blocked() {
+        // Fee-on-transfer / blocklisted tokens return `false` instead of
+        // reverting — must BLOCK, not ALLOW.
+        let mock = MockRpcClient {
+            call_handler: Some(Arc::new(move |_, _| Ok(format!("0x{:0>64x}", 0u64)))),
+            ..Default::default()
+        };
+
+        let res = check_token_tax(
+            &mock,
+            "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            1000,
+        )
+        .await;
+
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("returned false"));
+    }
+
+    #[tokio::test]
+    async fn test_transfer_malformed_response_blocked() {
+        let mock = MockRpcClient {
+            call_handler: Some(Arc::new(move |_, _| Ok("0xdead".to_string()))),
+            ..Default::default()
+        };
+
+        let res = check_token_tax(
+            &mock,
+            "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            1000,
+        )
+        .await;
+
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("fail closed"));
     }
 }

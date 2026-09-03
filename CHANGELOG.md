@@ -1,5 +1,23 @@
 # @ramprasad4121/stale
 
+## Unreleased
+
+### Breaking Changes
+
+- `encode_address_param` now returns `Result` and rejects non-40-hex-char input instead of silently truncating (PR #41).
+- `slippage_bps == 10000` (100%) is rejected; it would allow total loss (PR #41).
+- `check_sanctioned` takes a `chain_id` argument and BLOCKs on any chain other than mainnet, where the oracle lives (this PR).
+- `stale is-stale` exits 1 on BLOCK, matching `stale check` (PR #41).
+- `stale-mcp stale_quote` requires explicit `decimals` (no silent default) and caps at the on-chain maximum (PR #41).
+- `stale-mcp stale_isStale` errors on missing `nowSeconds`/`maxAgeSeconds` instead of defaulting to 0 (PR #41).
+- `AuditLogger::record` secret-scrubs reasons and metadata (embedded credentials become `<redacted>`) (this PR).
+
+### Security Fixes
+
+- PR #41: `is_stale`/`deadline` overflow → BLOCK; `updatedAt > i64::MAX` → BLOCK; negative `now` → BLOCK; decimals validity cap; sequencer unexpected-answer/incomplete-round → BLOCK; `pausable` malformed-response and RPC-error misclassification → BLOCK; slippage checked math; deviation self-comparison/stale-round → BLOCK; RPC 10s timeout, HTTPS-only (except localhost), URL redaction; `decode_round_data` exact-length check.
+- PR #43: RPC parsed-host validation, 1 MiB response cap; pipeline per-guard timeout + panic isolation + `MAX_GUARDS`; atomic rate-limiter acquisition + history cap; audit FIFO; nonce exact-equality; `check_prices` bounded at 64; release/dev `overflow-checks=true`.
+- This PR: honeypot `false`-return → BLOCK (fee-on-transfer); sanctions chain gate; audit-log secret scrub; zero `unwrap()` in binaries.
+
 ## 1.0.0
 
 ### Major Changes

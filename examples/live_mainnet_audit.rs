@@ -64,6 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n[4] Testing Live OFAC Sanctions Oracle...");
     let clean_res = check_sanctioned(
         &mainnet_rpc,
+        1,                                            // Ethereum mainnet: sanctions oracle chain
         "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", // Vitalik
     )
     .await;
@@ -74,6 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let lazarus_res = check_sanctioned(
         &mainnet_rpc,
+        1,                                            // Ethereum mainnet: sanctions oracle chain
         "0x098B716B8Aaf21512996dC57EB0615e2383E2f96", // Lazarus Group
     )
     .await;
