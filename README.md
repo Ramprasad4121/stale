@@ -119,6 +119,8 @@ async fn main() {
 - **`lookup_feed`**: Static registry for Ethereum, Arbitrum, Optimism, Base, and Polygon.
 
 ### Network & Infrastructure
+- **`check_gas_price`**: BLOCKs when `eth_gasPrice` exceeds policy (integer-wei compare, `f64` display-only); RPC failure or `0` policy → BLOCK.
+- **`check_gas_price_1559`**: EIP-1559 circuit breaker enforcing `baseFeePerGas` and `maxPriorityFeePerGas` independently; missing fee / pre-1559 chain → BLOCK.
 - **`check_sequencer`**: Validates L2 sequencer uptime (Arbitrum, OP, Base, Scroll, zkSync, Metis, Mantle) and enforces a 3600s restart grace period.
 - **`check_mev_rpc`**: Ensures the RPC endpoint routes to private builders (Flashbots, MEVBlocker, Titan, Beaver) rather than public mempools.
 - **`check_rpc_sync`**: Checks that the RPC node's latest block timestamp is within acceptable drift of current time.
