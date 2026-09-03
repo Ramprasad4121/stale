@@ -11,12 +11,18 @@ use std::sync::Arc;
 
 pub type CallHandler = Arc<dyn Fn(&str, &str) -> Result<String, String> + Send + Sync>;
 pub type CallFromHandler = Arc<dyn Fn(&str, &str, &str) -> Result<String, String> + Send + Sync>;
+pub type CallFromValueHandler =
+    Arc<dyn Fn(&str, &str, &str, u128) -> Result<String, String> + Send + Sync>;
 
 #[derive(Default, Clone)]
 /// In-memory mock. Every unset field errors on use (fail-closed tests).
 pub struct MockRpcClient {
     pub call_handler: Option<CallHandler>,
     pub call_from_handler: Option<CallFromHandler>,
+    /// Required for value-bearing simulations; no silent fallback (a
+    /// payable simulated as 0-value would be a fail-open result).
+    /// Tests for `value`-dependent guards MUST set this explicitly.
+    pub call_from_value_handler: Option<CallFromValueHandler>,
     pub block_number: Option<u64>,
     pub block_timestamp: Option<u64>,
     pub chain_id: Option<u64>,
@@ -43,6 +49,20 @@ impl EvmRpcClient for MockRpcClient {
             handler(to, data)
         } else {
             Err("mock call handler not configured".to_string())
+        }
+    }
+
+    async fn call_from_with_value(
+        &self,
+        from: &str,
+        to: &str,
+        data: &str,
+        value_wei: u128,
+    ) -> Result<String, String> {
+        if let Some(ref handler) = self.call_from_value_handler {
+            handler(from, to, data, value_wei)
+        } else {
+            Err("mock call_from_value handler not configured".to_string())
         }
     }
 

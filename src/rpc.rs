@@ -31,6 +31,18 @@ pub const MAX_RPC_RESPONSE_BYTES: usize = 1024 * 1024;
 pub trait EvmRpcClient: Send + Sync {
     async fn call(&self, to: &str, data: &str) -> Result<String, String>;
     async fn call_from(&self, from: &str, to: &str, data: &str) -> Result<String, String>;
+    /// `eth_call` with native `value` (wei) for payable flows. Default:
+    /// `Err` (fail closed) so transports without value support never
+    /// simulate payables as 0-value calls.
+    async fn call_from_with_value(
+        &self,
+        _from: &str,
+        _to: &str,
+        _data: &str,
+        _value_wei: u128,
+    ) -> Result<String, String> {
+        Err("value simulation not supported by this transport — BLOCK".to_string())
+    }
     async fn get_block_number(&self) -> Result<u64, String>;
     async fn get_block_timestamp(&self) -> Result<u64, String>;
     async fn get_chain_id(&self) -> Result<u64, String>;
@@ -193,6 +205,24 @@ impl EvmRpcClient for HttpRpcClient {
             .send_rpc(
                 "eth_call",
                 json!([{"from": from, "to": to, "data": data}, "latest"]),
+            )
+            .await?;
+        res.as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| "expected hex string from eth_call".to_string())
+    }
+
+    async fn call_from_with_value(
+        &self,
+        from: &str,
+        to: &str,
+        data: &str,
+        value_wei: u128,
+    ) -> Result<String, String> {
+        let res = self
+            .send_rpc(
+                "eth_call",
+                json!([{"from": from, "to": to, "data": data, "value": format!("0x{:x}", value_wei)}, "latest"]),
             )
             .await?;
         res.as_str()
