@@ -51,7 +51,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Clippy Linter
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
   test:
     name: Tests
@@ -70,7 +70,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run Tests
-        run: cargo test --all-targets --locked
+        run: cargo test --all-targets
 
   doc:
     name: Docs
@@ -89,7 +89,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Check Docs
-        run: cargo doc --no-deps --locked
+        run: cargo doc --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -111,4 +111,4 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Verify Packaging
-        run: cargo package --locked
+        run: cargo package
