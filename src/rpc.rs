@@ -23,10 +23,35 @@ pub struct HttpRpcClient {
 
 impl HttpRpcClient {
     pub fn new(rpc_url: impl Into<String>) -> Self {
-        Self {
-            rpc_url: rpc_url.into(),
-            client: reqwest::Client::new(),
+        let rpc_url = rpc_url.into();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        Self { rpc_url, client }
+    }
+
+    fn validate_url(&self) -> Result<(), String> {
+        let lower = self.rpc_url.to_lowercase();
+        if lower.starts_with("https://") {
+            return Ok(());
         }
+        if lower.starts_with("http://localhost")
+            || lower.starts_with("http://127.")
+            || lower.starts_with("http://[::1]")
+        {
+            return Ok(());
+        }
+        Err("refusing non-HTTPS RPC URL (MITM risk) — BLOCK. Use https:// or local http://localhost".to_string())
+    }
+
+    /// Strip the configured RPC URL (which may embed an API key) from error
+    /// text so secrets never land in GuardrailResult.reason / audit logs.
+    fn redact(&self, msg: String) -> String {
+        if self.rpc_url.is_empty() {
+            return msg;
+        }
+        msg.replace(&self.rpc_url, "<rpc-url>")
     }
 
     async fn send_rpc(
@@ -34,6 +59,7 @@ impl HttpRpcClient {
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, String> {
+        self.validate_url()?;
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -47,7 +73,7 @@ impl HttpRpcClient {
             .json(&payload)
             .send()
             .await
-            .map_err(|e| format!("rpc network error: {}", e))?;
+            .map_err(|e| self.redact(format!("rpc network error: {}", e)))?;
 
         if !resp.status().is_success() {
             return Err(format!("rpc http error {}", resp.status()));

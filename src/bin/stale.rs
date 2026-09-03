@@ -99,6 +99,9 @@ async fn main() {
                 max_age_seconds: max_age,
             });
             println!("{}", serde_json::to_string_pretty(&res).unwrap());
+            if res.decision == stale::types::Decision::Block {
+                std::process::exit(1);
+            }
         }
         Some(Commands::Quote {
             answer,

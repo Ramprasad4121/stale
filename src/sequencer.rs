@@ -20,7 +20,19 @@ pub async fn check_sequencer(
 
     match client.call(feed_address, SEQUENCER_SELECTOR).await {
         Ok(hex_data) => match decode_round_data(&hex_data) {
-            Ok((_round_id, answer, started_at, _updated_at, _answered_in_round)) => {
+            Ok((round_id, answer, started_at, updated_at, answered_in_round)) => {
+                if answered_in_round < round_id {
+                    return Some(format!(
+                        "sequencer feed incomplete round on chain {} — BLOCK",
+                        chain_id
+                    ));
+                }
+                if updated_at == 0 {
+                    return Some(format!(
+                        "sequencer feed has no data (updatedAt 0) on chain {} — BLOCK",
+                        chain_id
+                    ));
+                }
                 if answer == 1 {
                     return Some(format!(
                         "L2 Sequencer is DOWN on chain {} — BLOCK",
@@ -28,8 +40,22 @@ pub async fn check_sequencer(
                     ));
                 }
 
-                if answer == 0 {
-                    let started_at_u64 = started_at as u64;
+                if answer != 0 {
+                    return Some(format!(
+                        "unexpected sequencer status {} on chain {} — BLOCK (fail closed)",
+                        answer, chain_id
+                    ));
+                }
+
+                {
+                    let started_at_u64 = if started_at > u64::MAX as u128 {
+                        return Some(format!(
+                            "sequencer startedAt unrepresentable on chain {} — BLOCK",
+                            chain_id
+                        ));
+                    } else {
+                        started_at as u64
+                    };
                     if now_seconds < started_at_u64 {
                         return Some(format!(
                             "L2 Sequencer startedAt is in future on chain {} — BLOCK",
@@ -112,5 +138,21 @@ mod tests {
         let res = check_sequencer(ARBITRUM_CHAIN_ID, &mock, 1500).await;
         assert!(res.is_some());
         assert!(res.unwrap().contains("grace period"));
+    }
+
+    #[tokio::test]
+    async fn test_sequencer_unexpected_answer_blocks_fail_closed() {
+        let round_data_hex = format!(
+            "0x{:0>64x}{:0>64x}{:0>64x}{:0>64x}{:0>64x}",
+            1u64, 2u64, 1000u64, 1000u64, 1u64
+        );
+        let mock = MockRpcClient {
+            call_handler: Some(Arc::new(move |_, _| Ok(round_data_hex.clone()))),
+            ..Default::default()
+        };
+
+        let res = check_sequencer(ARBITRUM_CHAIN_ID, &mock, 5000).await;
+        assert!(res.is_some());
+        assert!(res.unwrap().contains("fail closed"));
     }
 }

@@ -112,12 +112,39 @@ async fn main() {
                                 v.as_i64().map(|n| n.to_string())
                             }
                         });
-                        let now_seconds =
-                            args.get("nowSeconds").and_then(|v| v.as_i64()).unwrap_or(0);
-                        let max_age_seconds = args
+                        let now_seconds = match args.get("nowSeconds").and_then(|v| v.as_i64()) {
+                            Some(n) => n,
+                            None => {
+                                let _ = stdout.write_all(format!("{}\n", json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": {
+                                        "content": [{"type": "text", "text": "BLOCK — missing nowSeconds"}],
+                                        "isError": true
+                                    }
+                                })).as_bytes()).await;
+                                let _ = stdout.flush().await;
+                                continue;
+                            }
+                        };
+                        let max_age_seconds = match args
                             .get("maxAgeSeconds")
                             .and_then(|v| v.as_i64())
-                            .unwrap_or(0);
+                        {
+                            Some(n) => n,
+                            None => {
+                                let _ = stdout.write_all(format!("{}\n", json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": {
+                                        "content": [{"type": "text", "text": "BLOCK — missing maxAgeSeconds"}],
+                                        "isError": true
+                                    }
+                                })).as_bytes()).await;
+                                let _ = stdout.flush().await;
+                                continue;
+                            }
+                        };
 
                         let parsed_updated_at = updated_at_str.and_then(|s| {
                             if s.starts_with("0x") || s.starts_with("0X") {
@@ -149,12 +176,52 @@ async fn main() {
                         })
                     }
                     "stale_quote" => {
-                        let answer_str = args.get("answer").and_then(|v| v.as_str()).unwrap_or("0");
-                        let decimals =
-                            args.get("decimals").and_then(|v| v.as_u64()).unwrap_or(8) as u8;
+                        let answer_str = args.get("answer").and_then(|v| v.as_str()).unwrap_or("");
+                        let decimals_raw = match args.get("decimals").and_then(|v| v.as_u64()) {
+                            Some(d) => d,
+                            None => {
+                                let _ = stdout.write_all(format!("{}\n", json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": {
+                                        "content": [{"type": "text", "text": "BLOCK — quote failed: missing decimals (query the feed's decimals() on-chain, never assume)"}],
+                                        "isError": true
+                                    }
+                                })).as_bytes()).await;
+                                let _ = stdout.flush().await;
+                                continue;
+                            }
+                        };
                         let amount = args.get("amountEth").and_then(|v| v.as_f64());
 
-                        let answer = answer_str.parse::<i128>().unwrap_or(0);
+                        if decimals_raw > 18 {
+                            let _ = stdout.write_all(format!("{}\n", json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "result": {
+                                    "content": [{"type": "text", "text": "BLOCK — quote failed: invalid decimals (max 18)"}],
+                                    "isError": true
+                                }
+                            })).as_bytes()).await;
+                            let _ = stdout.flush().await;
+                            continue;
+                        }
+                        let decimals = decimals_raw as u8;
+                        let answer = match answer_str.parse::<i128>() {
+                            Ok(a) => a,
+                            Err(_) => {
+                                let _ = stdout.write_all(format!("{}\n", json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": {
+                                        "content": [{"type": "text", "text": "BLOCK — quote failed: unparseable answer"}],
+                                        "isError": true
+                                    }
+                                })).as_bytes()).await;
+                                let _ = stdout.flush().await;
+                                continue;
+                            }
+                        };
                         match quote_from_feed(QuoteInput {
                             answer,
                             decimals,

@@ -51,12 +51,16 @@ pub async fn check_allowance(
         return GuardrailResult::block(format!("invalid spender address {} — BLOCK", spender));
     }
 
-    let calldata = format!(
-        "{}{}{}",
-        ALLOWANCE_SELECTOR,
-        encode_address_param(owner),
-        encode_address_param(spender)
-    );
+    let (owner_enc, spender_enc) =
+        match (encode_address_param(owner), encode_address_param(spender)) {
+            (Ok(o), Ok(s)) => (o, s),
+            _ => {
+                return GuardrailResult::block(
+                    "invalid owner/spender address encoding — BLOCK (fail closed)".to_string(),
+                )
+            }
+        };
+    let calldata = format!("{}{}{}", ALLOWANCE_SELECTOR, owner_enc, spender_enc);
 
     let current_allowance = match client.call(token, &calldata).await {
         Ok(hex_data) => match decode_word_u128(&hex_data, 0) {

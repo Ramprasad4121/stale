@@ -67,6 +67,16 @@ pub async fn check_price(
         .now_seconds
         .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
+    if now < 0 {
+        return block_result(
+            input.feed,
+            "invalid now timestamp (negative) — BLOCK".to_string(),
+            input.max_age_seconds,
+            now,
+            input.amount_eth,
+        );
+    }
+
     if !is_valid_eth_address(input.feed) {
         return block_result(
             input.feed,
@@ -168,7 +178,7 @@ pub async fn check_price(
         };
 
     let decimals = match decode_word_u128(&hex_dec, 0) {
-        Ok(d) if d <= 36 => d as u8,
+        Ok(d) if d <= 18 => d as u8,
         _ => {
             return block_result(
                 input.feed,
@@ -216,8 +226,24 @@ pub async fn check_price(
         );
     }
 
+    // updatedAt is uint80 on-chain; reject values unrepresentable as i64
+    // instead of silently wrapping via `as` cast.
+    if updated_at > i64::MAX as u128 {
+        return block_result(
+            input.feed,
+            format!(
+                "updatedAt {} exceeds i64::MAX (unrepresentable) from {} — BLOCK",
+                updated_at, input.feed
+            ),
+            input.max_age_seconds,
+            now,
+            input.amount_eth,
+        );
+    }
+    let updated_at_i64 = updated_at as i64;
+
     let stale_check = is_stale(IsStaleInput {
-        updated_at: Some(updated_at as i64),
+        updated_at: Some(updated_at_i64),
         now_seconds: now,
         max_age_seconds: input.max_age_seconds,
     });
@@ -355,6 +381,45 @@ mod tests {
         assert_eq!(res.decision, Decision::Block);
         assert!(!res.allow_execute);
         assert!(res.reason.contains("stale"));
+    }
+
+    #[tokio::test]
+    async fn test_check_price_updated_at_overflow_blocked() {
+        let now = 1700000200;
+        let huge_updated_at: u128 = 1u128 << 70; // exceeds i64::MAX
+        let round_data_hex = format!(
+            "0x{:0>64x}{:0>64x}{:0>64x}{:0>64x}{:0>64x}",
+            10u64, 2500_00000000u64, 1700000000u64, huge_updated_at, 10u64
+        );
+        let dec_hex = format!("0x{:0>64x}", 8u64);
+
+        let mock = MockRpcClient {
+            call_handler: Some(Arc::new(move |_, data| {
+                if data == LATEST_ROUND_DATA_SELECTOR {
+                    Ok(round_data_hex.clone())
+                } else if data == DECIMALS_SELECTOR {
+                    Ok(dec_hex.clone())
+                } else {
+                    Err("unknown".to_string())
+                }
+            })),
+            ..Default::default()
+        };
+
+        let res = check_price(
+            &mock,
+            CheckPriceInput {
+                feed: DEFAULT_FEED,
+                max_age_seconds: 60,
+                amount_eth: None,
+                now_seconds: Some(now),
+            },
+        )
+        .await;
+
+        assert_eq!(res.decision, Decision::Block);
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("unrepresentable"));
     }
 
     #[tokio::test]
