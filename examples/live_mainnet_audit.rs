@@ -123,6 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
         None,
         100_000_000_000_000_000, // 0.1 ETH
+        1_000_000_000_000_000,   // 0.001 ETH gas reserve
     )
     .await;
     println!("  -> Solvency Status  : {}", solv_res.decision);
