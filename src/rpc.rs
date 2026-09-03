@@ -36,6 +36,17 @@ pub trait EvmRpcClient: Send + Sync {
     async fn get_chain_id(&self) -> Result<u64, String>;
     async fn get_transaction_count(&self, address: &str) -> Result<u64, String>;
     async fn get_gas_price(&self) -> Result<u128, String>;
+    /// Latest `baseFeePerGas` (`eth_getBlockByNumber`). Default: `Err`
+    /// (fail closed) so external implementors are never silently treated
+    /// as 1559-capable. Pre-1559 chains (no `baseFeePerGas` field) also
+    /// `Err` in the HTTP transport — callers map to `BLOCK`.
+    async fn get_base_fee(&self) -> Result<u128, String> {
+        Err("base fee not supported by this transport — BLOCK".to_string())
+    }
+    /// `eth_maxPriorityFeePerGas`. Same fail-closed default as `get_base_fee`.
+    async fn get_priority_fee(&self) -> Result<u128, String> {
+        Err("priority fee not supported by this transport — BLOCK".to_string())
+    }
     async fn get_balance(&self, address: &str) -> Result<u128, String>;
     async fn get_code(&self, address: &str) -> Result<String, String>;
 }
@@ -231,6 +242,25 @@ impl EvmRpcClient for HttpRpcClient {
 
     async fn get_gas_price(&self) -> Result<u128, String> {
         let res = self.send_rpc("eth_gasPrice", json!([])).await?;
+        parse_hex_u128(&res)
+    }
+
+    async fn get_base_fee(&self) -> Result<u128, String> {
+        let res = self
+            .send_rpc("eth_getBlockByNumber", json!(["latest", false]))
+            .await?;
+        let fee_hex = res
+            .get("baseFeePerGas")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                "missing baseFeePerGas (pre-1559 chain?) — BLOCK (fail closed)".to_string()
+            })?;
+        u128::from_str_radix(strip_hex_prefix(fee_hex.trim()), 16)
+            .map_err(|e| format!("invalid hex baseFeePerGas: {}", e))
+    }
+
+    async fn get_priority_fee(&self) -> Result<u128, String> {
+        let res = self.send_rpc("eth_maxPriorityFeePerGas", json!([])).await?;
         parse_hex_u128(&res)
     }
 

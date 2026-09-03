@@ -67,7 +67,7 @@ pub use deadline::{check_deadline, CheckDeadlineInput};
 pub use deviation::check_price_deviation;
 pub use dex::{check_pool_v2, check_pool_v3};
 pub use feeds::{lookup_feed, FeedEntry, DEFAULT_FEED, FEEDS, REGISTRY};
-pub use gas::check_gas_price;
+pub use gas::{check_gas_price, check_gas_price_1559};
 pub use honeypot::check_token_tax;
 pub use is_stale::{is_stale, IsStaleInput, IsStaleResult};
 pub use mev::{check_mev_rpc, MEV_PROTECTED_RPCS};
@@ -98,7 +98,7 @@ pub mod prelude {
     pub use crate::deviation::check_price_deviation;
     pub use crate::dex::{check_pool_v2, check_pool_v3};
     pub use crate::feeds::{lookup_feed, DEFAULT_FEED};
-    pub use crate::gas::check_gas_price;
+    pub use crate::gas::{check_gas_price, check_gas_price_1559};
     pub use crate::honeypot::check_token_tax;
     pub use crate::is_stale::{is_stale, IsStaleInput};
     pub use crate::mev::check_mev_rpc;
