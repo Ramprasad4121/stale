@@ -15,6 +15,82 @@ use std::sync::Arc;
 /// Default bound when `max_entries` is `None`.
 pub const DEFAULT_MAX_ENTRIES: usize = 10_000;
 
+/// Mask embedded credentials before persisting an entry. Reasons and
+/// metadata can carry RPC URLs with API keys (`https://user:pass@host`,
+/// `?apiKey=secret`, `?token=secret`); the audit trail must never become
+/// a secret store. Non-credential text passes through untouched.
+pub fn scrub_secrets(text: &str) -> String {
+    let mut out = text.to_string();
+    // userinfo credentials: scheme://user:pass@ → scheme://<redacted>@
+    out = mask_userinfo(&out);
+    // query/fragment key material: key=VALUE → key=<redacted>
+    for key in ["apiKey", "apikey", "api_key", "token", "secret", "key"] {
+        out = mask_query_value(&out, key);
+    }
+    out
+}
+
+fn mask_userinfo(s: &str) -> String {
+    let mut result = s.to_string();
+    // Find `://` then redact up to the next `@` on the same token.
+    let mut search_from = 0;
+    while let Some(p) = result[search_from..].find("://") {
+        let scheme_pos = search_from + p + 3;
+        let rest = &result[scheme_pos..];
+        let token_end = rest
+            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ',' | ')'))
+            .map(|q| scheme_pos + q)
+            .unwrap_or(result.len());
+        if let Some(at) = result[scheme_pos..token_end].find('@') {
+            let at_abs = scheme_pos + at;
+            result.replace_range(scheme_pos..at_abs, "<redacted>");
+            search_from = scheme_pos + "<redacted>".len();
+        } else {
+            search_from = token_end;
+        }
+    }
+    result
+}
+
+fn mask_query_value(s: &str, key: &str) -> String {
+    let mut result = s.to_string();
+    let mut search_from = 0;
+    loop {
+        let needle = format!("{}=", key);
+        let key_pos = match result[search_from..].find(&needle) {
+            Some(p) => search_from + p,
+            None => break,
+        };
+        let val_start = key_pos + needle.len();
+        let val_end = result[val_start..]
+            .find(|c: char| c.is_whitespace() || matches!(c, '&' | '"' | '\'' | ',' | ')'))
+            .map(|p| val_start + p)
+            .unwrap_or(result.len());
+        if val_end > val_start {
+            result.replace_range(val_start..val_end, "<redacted>");
+            search_from = val_start + "<redacted>".len();
+        } else {
+            search_from = val_end;
+        }
+    }
+    result
+}
+
+fn scrub_metadata(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::String(s) => serde_json::Value::String(scrub_secrets(s)),
+        serde_json::Value::Array(arr) => {
+            serde_json::Value::Array(arr.iter().map(scrub_metadata).collect())
+        }
+        serde_json::Value::Object(map) => serde_json::Value::Object(
+            map.iter()
+                .map(|(k, v)| (k.clone(), scrub_metadata(v)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// One recorded guard outcome.
@@ -57,6 +133,7 @@ impl AuditLogger {
 
     /// Record one guard outcome, evicting oldest-first past capacity.
     /// Callback panics are swallowed (logged path must not break guards).
+    /// Reasons and metadata are secret-scrubbed before persistence.
     pub fn record(
         &mut self,
         guardrail: impl Into<String>,
@@ -68,8 +145,8 @@ impl AuditLogger {
             timestamp: Utc::now().to_rfc3339(),
             guardrail: guardrail.into(),
             decision,
-            reason: reason.into(),
-            metadata,
+            reason: scrub_secrets(&reason.into()),
+            metadata: metadata.map(|m| scrub_metadata(&m)),
         };
 
         self.entries.push_back(entry.clone());
@@ -157,5 +234,31 @@ mod tests {
         let entry = logger.record("gas", Decision::Allow, "ok", None);
         assert_eq!(entry.guardrail, "gas");
         assert_eq!(logger.size(), 1);
+    }
+
+    #[test]
+    fn test_record_scrubs_embedded_credentials() {
+        let mut logger = AuditLogger::default();
+        let entry = logger.record(
+            "rpc",
+            Decision::Block,
+            "rpc network error at https://user:s3cret@rpc.example.com/v1?apiKey=ABC123&other=keep",
+            Some(serde_json::json!({"url": "https://x:yz@h.io/?token=T"})),
+        );
+        assert!(!entry.reason.contains("s3cret"));
+        assert!(!entry.reason.contains("ABC123"));
+        assert!(entry.reason.contains("<redacted>"));
+        assert!(entry.reason.contains("other=keep"));
+        let meta = entry.metadata.unwrap().to_string();
+        assert!(!meta.contains("yz"));
+        assert!(!meta.contains("/T\""));
+    }
+
+    #[test]
+    fn test_scrub_leaves_plain_text_untouched() {
+        assert_eq!(
+            scrub_secrets("fresh: age 10s <= maxAge 60s — ALLOW"),
+            "fresh: age 10s <= maxAge 60s — ALLOW"
+        );
     }
 }

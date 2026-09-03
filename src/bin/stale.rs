@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use serde::Serialize;
 use stale::check::{check_price, CheckPriceInput};
 use stale::feeds::{lookup_feed, DEFAULT_FEED, REGISTRY};
 use stale::is_stale::{is_stale, IsStaleInput};
@@ -73,6 +74,14 @@ enum Commands {
     Feeds,
 }
 
+/// Serialize for CLI output. Serialization of our own result types is
+/// infallible in practice, but binaries must never panic (constitution:
+/// zero runtime panics), so failures degrade to a JSON error stub.
+fn to_json<T: Serialize>(value: &T) -> String {
+    serde_json::to_string_pretty(value)
+        .unwrap_or_else(|_| "{\"error\":\"response serialization failed\"}".to_string())
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -98,7 +107,7 @@ async fn main() {
                 now_seconds: now_sec,
                 max_age_seconds: max_age,
             });
-            println!("{}", serde_json::to_string_pretty(&res).unwrap());
+            println!("{}", to_json(&res));
             if res.decision == stale::types::Decision::Block {
                 std::process::exit(1);
             }
@@ -119,7 +128,7 @@ async fn main() {
             }
         },
         Some(Commands::Feeds) => {
-            println!("{}", serde_json::to_string_pretty(&REGISTRY).unwrap());
+            println!("{}", to_json(&REGISTRY));
         }
         None => {
             if let (Some(rpc), Some(max_age)) = (cli.rpc, cli.max_age) {
@@ -147,7 +156,7 @@ async fn run_check(rpc: &str, max_age: i64, feed: &str, amount: Option<f64>, jso
     .await;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&res).unwrap());
+        println!("{}", to_json(&res));
     } else {
         println!("decision:     {}", res.decision);
         println!("reason:       {}", res.reason);

@@ -41,6 +41,25 @@ jobs:
           script: |
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const title = `🚨 [CANARY FAILURE] Live On-Chain Guardrail Alert (${new Date().toISOString().split('T')[0]})`;
+
+            // Deduplicate: never spam a new issue per failing run.
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'canary-alert',
+            });
+            if (open.data.length > 0) {
+              const target = open.data[0];
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: target.number,
+                body: `Still failing as of ${runUrl}.`,
+              });
+              return;
+            }
+
             const body = `### ⚠️ Live On-Chain Canary Failure Detected\n\n` +
               `The scheduled 24/7 Canary Watcher detected an on-chain failure or RPC divergence during \`live_mainnet_audit.rs\`.\n\n` +
               `* **Run URL**: ${runUrl}\n` +

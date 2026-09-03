@@ -10,6 +10,14 @@
 //! Each stdin line is capped at [`MAX_MCP_LINE_BYTES`] (1 MiB); oversized
 //! lines yield a `-32600` error instead of buffering unbounded memory.
 
+/// Serialize for MCP text content. Never panic on serialization failure;
+/// degrade to a JSON error stub (fail closed at the transport layer).
+fn to_json<T: Serialize>(value: &T) -> String {
+    serde_json::to_string_pretty(value)
+        .unwrap_or_else(|_| "{\"error\":\"response serialization failed\"}".to_string())
+}
+
+use serde::Serialize;
 use serde_json::{json, Value};
 use stale::check::{check_price, CheckPriceInput};
 use stale::is_stale::{is_stale, IsStaleInput};
@@ -197,7 +205,7 @@ async fn main() {
                             "result": {
                                 "content": [{
                                     "type": "text",
-                                    "text": serde_json::to_string_pretty(&res).unwrap()
+                                    "text": to_json(&res)
                                 }],
                                 "isError": blocked
                             }
@@ -261,7 +269,7 @@ async fn main() {
                                 "result": {
                                     "content": [{
                                         "type": "text",
-                                        "text": serde_json::to_string_pretty(&res).unwrap()
+                                        "text": to_json(&res)
                                     }]
                                 }
                             }),
@@ -321,7 +329,7 @@ async fn main() {
                             "result": {
                                 "content": [{
                                     "type": "text",
-                                    "text": serde_json::to_string_pretty(&res).unwrap()
+                                    "text": to_json(&res)
                                 }],
                                 "isError": blocked
                             }

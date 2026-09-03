@@ -11,10 +11,24 @@ use crate::types::GuardrailResult;
 pub const SANCTIONS_ORACLE: &str = "0x40C57923924B5c5c5455c48D93317139ADDaC8fb";
 /// Official Chainalysis / Chainlink Oracle isSanctioned(address) function selector
 pub const IS_SANCTIONED_SELECTOR: &str = "0xdf592f7d";
+/// The sanctions oracle is deployed on Ethereum mainnet only.
+pub const SANCTIONS_CHAIN_ID: u64 = 1;
 
 /// BLOCK if `address` is sanctioned per [`SANCTIONS_ORACLE`].
-/// Fail closed on every error path.
-pub async fn check_sanctioned(client: &dyn EvmRpcClient, address: &str) -> GuardrailResult {
+/// Fail closed on every error path. `chain_id` gates the oracle binding:
+/// any chain other than [`SANCTIONS_CHAIN_ID`] BLOCKs rather than querying
+/// an address that is not the oracle on that chain.
+pub async fn check_sanctioned(
+    client: &dyn EvmRpcClient,
+    chain_id: u64,
+    address: &str,
+) -> GuardrailResult {
+    if chain_id != SANCTIONS_CHAIN_ID {
+        return GuardrailResult::block(format!(
+            "sanctions oracle is only deployed on chain {} (queried chain {}) — BLOCK",
+            SANCTIONS_CHAIN_ID, chain_id
+        ));
+    }
     if !is_valid_eth_address(address) {
         return GuardrailResult::block(format!("invalid address {} — BLOCK", address));
     }
@@ -67,7 +81,7 @@ mod tests {
             ..Default::default()
         };
 
-        let res = check_sanctioned(&mock, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").await;
+        let res = check_sanctioned(&mock, 1, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").await;
         assert!(!res.allow_execute);
         assert!(res.reason.contains("COMPLIANCE VIOLATION"));
     }
@@ -80,8 +94,23 @@ mod tests {
             ..Default::default()
         };
 
-        let res = check_sanctioned(&mock, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").await;
+        let res = check_sanctioned(&mock, 1, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").await;
         assert!(res.allow_execute);
         assert!(res.reason.contains("compliant"));
+    }
+
+    #[tokio::test]
+    async fn test_wrong_chain_blocked_without_rpc() {
+        // Mock would ALLOW (returns false), but the chain gate must fire
+        // first — never query a non-oracle address on another chain.
+        let hex = format!("0x{:0>64x}", 0u64);
+        let mock = MockRpcClient {
+            call_handler: Some(Arc::new(move |_, _| Ok(hex.clone()))),
+            ..Default::default()
+        };
+
+        let res = check_sanctioned(&mock, 10, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").await;
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("only deployed on chain 1"));
     }
 }
