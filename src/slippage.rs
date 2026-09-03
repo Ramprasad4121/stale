@@ -25,10 +25,15 @@ pub fn calculate_min_amount_out(input: CalculateMinAmountOutInput) -> Result<u12
     if input.slippage_bps > 10000 {
         return Err("slippage_bps cannot exceed 10000 (100%)".to_string());
     }
+    if input.slippage_bps == 10000 {
+        return Err("slippage_bps of 10000 (100%) would allow total loss — BLOCK".to_string());
+    }
 
-    let exp_out = (input.token_out_decimals + input.price_out_decimals) as i32;
-    let exp_in = (input.token_in_decimals + input.price_in_decimals) as i32;
-    let exp_diff = exp_out - exp_in;
+    let exp_out: i64 = (input.token_out_decimals as i64) + (input.price_out_decimals as i64);
+    let exp_in: i64 = (input.token_in_decimals as i64) + (input.price_in_decimals as i64);
+    let exp_diff = exp_out
+        .checked_sub(exp_in)
+        .ok_or_else(|| "overflow in decimal exponent diff".to_string())?;
 
     let prod = input
         .amount_in
@@ -36,7 +41,13 @@ pub fn calculate_min_amount_out(input: CalculateMinAmountOutInput) -> Result<u12
         .ok_or_else(|| "overflow in amount_in * price_in_answer".to_string())?;
 
     let raw_amount_out = if exp_diff >= 0 {
-        let scale = 10u128.pow(exp_diff as u32);
+        let exp_u32: u32 = u32::try_from(exp_diff)
+            .ok()
+            .filter(|&e| e <= 77)
+            .ok_or_else(|| "decimal exponent out of range".to_string())?;
+        let scale = 10u128
+            .checked_pow(exp_u32)
+            .ok_or_else(|| "overflow in decimal scale".to_string())?;
         // Compute (prod * scale) / price_out without premature truncation:
         // Using: (prod * scale) / price_out = (prod / price_out) * scale + ((prod % price_out) * scale) / price_out
         let q = prod / input.price_out_answer;
@@ -54,7 +65,13 @@ pub fn calculate_min_amount_out(input: CalculateMinAmountOutInput) -> Result<u12
             .checked_add(term2)
             .ok_or_else(|| "overflow in raw_amount_out".to_string())?
     } else {
-        let scale = 10u128.pow((-exp_diff) as u32);
+        let exp_u32: u32 = u32::try_from(exp_diff.checked_neg().unwrap_or(i64::MIN))
+            .ok()
+            .filter(|&e| e <= 77)
+            .ok_or_else(|| "decimal exponent out of range".to_string())?;
+        let scale = 10u128
+            .checked_pow(exp_u32)
+            .ok_or_else(|| "overflow in decimal scale".to_string())?;
         match input.price_out_answer.checked_mul(scale) {
             Some(denom) => prod / denom,
             None => (prod / input.price_out_answer) / scale,
@@ -62,7 +79,10 @@ pub fn calculate_min_amount_out(input: CalculateMinAmountOutInput) -> Result<u12
     };
 
     let factor = (10000 - input.slippage_bps) as u128;
-    let min_amount_out = (raw_amount_out * factor) / 10000;
+    let min_amount_out = raw_amount_out
+        .checked_mul(factor)
+        .ok_or_else(|| "overflow in slippage factor".to_string())?
+        / 10000;
 
     Ok(min_amount_out)
 }
@@ -140,6 +160,18 @@ mod tests {
             price_out_answer: 100,
             price_out_decimals: 8,
             slippage_bps: 10001,
+        })
+        .is_err());
+        // 100% slippage allows total loss — must also fail
+        assert!(calculate_min_amount_out(CalculateMinAmountOutInput {
+            amount_in: 100,
+            token_in_decimals: 18,
+            price_in_answer: 100,
+            price_in_decimals: 8,
+            token_out_decimals: 18,
+            price_out_answer: 100,
+            price_out_decimals: 8,
+            slippage_bps: 10000,
         })
         .is_err());
     }

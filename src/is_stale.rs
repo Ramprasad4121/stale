@@ -38,7 +38,16 @@ pub fn is_stale(input: IsStaleInput) -> IsStaleResult {
         }
     };
 
-    let age_seconds = input.now_seconds - updated_at;
+    let age_seconds = match input.now_seconds.checked_sub(updated_at) {
+        Some(age) => age,
+        None => {
+            return IsStaleResult {
+                decision: Decision::Block,
+                age_seconds: None,
+                reason: "timestamp arithmetic overflow — BLOCK (fail closed)".to_string(),
+            };
+        }
+    };
 
     if age_seconds < 0 {
         return IsStaleResult {
@@ -129,5 +138,16 @@ mod tests {
             max_age_seconds: -1,
         });
         assert_eq!(res.decision, Decision::Block);
+    }
+
+    #[test]
+    fn test_timestamp_overflow_blocks_fail_closed() {
+        let res = is_stale(IsStaleInput {
+            updated_at: Some(i64::MAX),
+            now_seconds: i64::MIN,
+            max_age_seconds: 60,
+        });
+        assert_eq!(res.decision, Decision::Block);
+        assert!(res.reason.contains("overflow"));
     }
 }

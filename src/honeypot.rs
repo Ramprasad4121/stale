@@ -22,10 +22,14 @@ pub async fn check_token_tax(
         return GuardrailResult::block("invalid amount 0 — BLOCK");
     }
 
+    let dead_enc = match encode_address_param(DEAD_ADDRESS) {
+        Ok(e) => e,
+        Err(e) => return GuardrailResult::block(format!("{} — BLOCK (fail closed)", e)),
+    };
     let calldata = format!(
         "{}{}{}",
         TRANSFER_SELECTOR,
-        encode_address_param(DEAD_ADDRESS),
+        dead_enc,
         encode_u256_param(amount)
     );
 

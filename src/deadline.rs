@@ -21,7 +21,20 @@ pub fn check_deadline(input: CheckDeadlineInput, now_seconds: i64) -> GuardrailR
         return GuardrailResult::block("invalid minFutureSeconds — BLOCK");
     }
 
-    let delta = input.deadline - now_seconds;
+    if min_future_seconds > max_future_seconds {
+        return GuardrailResult::block(
+            "invalid deadline window: minFutureSeconds > maxFutureSeconds — BLOCK",
+        );
+    }
+
+    let delta = match input.deadline.checked_sub(now_seconds) {
+        Some(d) => d,
+        None => {
+            return GuardrailResult::block(
+                "deadline timestamp arithmetic overflow — BLOCK (fail closed)",
+            )
+        }
+    };
 
     if delta < 0 {
         return GuardrailResult::block(format!(

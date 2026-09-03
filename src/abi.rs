@@ -1,11 +1,18 @@
-pub fn encode_address_param(addr: &str) -> String {
-    let clean = addr.trim().trim_start_matches("0x");
-    if clean.len() > 40 {
-        // Truncate from end or take last 40 characters
-        let trimmed = &clean[clean.len() - 40..];
-        return format!("{:0>64}", trimmed);
+pub fn encode_address_param(addr: &str) -> Result<String, String> {
+    let clean = addr
+        .trim()
+        .trim_start_matches("0x")
+        .trim_start_matches("0X");
+    if clean.len() != 40 {
+        return Err(format!(
+            "invalid address length {} (expected 40 hex chars) — BLOCK",
+            clean.len()
+        ));
     }
-    format!("{:0>64}", clean)
+    if !clean.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("invalid address: non-hex characters — BLOCK".to_string());
+    }
+    Ok(format!("{:0>64}", clean.to_lowercase()))
 }
 
 pub fn encode_u256_param(val: u128) -> String {
@@ -13,7 +20,10 @@ pub fn encode_u256_param(val: u128) -> String {
 }
 
 pub fn decode_word_u128(hex_str: &str, offset_words: usize) -> Result<u128, String> {
-    let clean = hex_str.trim().trim_start_matches("0x");
+    let clean = hex_str
+        .trim()
+        .trim_start_matches("0x")
+        .trim_start_matches("0X");
     if !clean.is_ascii() {
         return Err("hex response contains non-ASCII characters".to_string());
     }
@@ -27,7 +37,10 @@ pub fn decode_word_u128(hex_str: &str, offset_words: usize) -> Result<u128, Stri
 }
 
 pub fn decode_word_i128(hex_str: &str, offset_words: usize) -> Result<i128, String> {
-    let clean = hex_str.trim().trim_start_matches("0x");
+    let clean = hex_str
+        .trim()
+        .trim_start_matches("0x")
+        .trim_start_matches("0X");
     if !clean.is_ascii() {
         return Err("hex response contains non-ASCII characters".to_string());
     }
@@ -77,6 +90,17 @@ pub fn decode_bool(hex_str: &str) -> Result<bool, String> {
 }
 
 pub fn decode_round_data(hex_str: &str) -> Result<(u128, i128, u128, u128, u128), String> {
+    let clean = hex_str
+        .trim()
+        .trim_start_matches("0x")
+        .trim_start_matches("0X");
+    if clean.len() != 5 * 64 {
+        return Err(format!(
+            "invalid latestRoundData length {} (expected {}) — BLOCK",
+            clean.len(),
+            5 * 64
+        ));
+    }
     let round_id = decode_word_u128(hex_str, 0)?;
     let answer = decode_word_i128(hex_str, 1)?;
     let started_at = decode_word_u128(hex_str, 2)?;
@@ -91,9 +115,17 @@ mod tests {
 
     #[test]
     fn test_encode_address() {
-        let encoded = encode_address_param("0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419");
+        let encoded = encode_address_param("0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419").unwrap();
         assert_eq!(encoded.len(), 64);
-        assert!(encoded.ends_with("5f4eC3Df9cbd43714FE2740f5E3616155c5b8419"));
+        assert!(encoded.ends_with("5f4ec3df9cbd43714fe2740f5e3616155c5b8419"));
+    }
+
+    #[test]
+    fn test_encode_address_rejects_invalid() {
+        assert!(encode_address_param("0x1234").is_err());
+        assert!(encode_address_param("0xZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ").is_err());
+        // Must not silently truncate overlong input
+        assert!(encode_address_param("0x00005f4eC3Df9cbd43714FE2740f5E3616155c5b8419").is_err());
     }
 
     #[test]

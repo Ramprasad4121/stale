@@ -21,7 +21,11 @@ pub async fn check_balance(
     }
 
     let balance = if let Some(token_addr) = token {
-        let calldata = format!("{}{}", BALANCE_OF_SELECTOR, encode_address_param(agent));
+        let encoded = match encode_address_param(agent) {
+            Ok(e) => e,
+            Err(e) => return GuardrailResult::block(format!("{} — BLOCK (fail closed)", e)),
+        };
+        let calldata = format!("{}{}", BALANCE_OF_SELECTOR, encoded);
         match client.call(token_addr, &calldata).await {
             Ok(hex_data) => match decode_word_u128(&hex_data, 0) {
                 Ok(b) => b,

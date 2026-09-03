@@ -22,6 +22,11 @@ pub async fn check_price_deviation(
     if !max_deviation_percent.is_finite() || max_deviation_percent <= 0.0 {
         return GuardrailResult::block("invalid maxDeviationPercent — BLOCK");
     }
+    if feed_a.to_lowercase() == feed_b.to_lowercase() {
+        return GuardrailResult::block(
+            "self-comparison: feedA and feedB are identical (deviation always 0%) — BLOCK",
+        );
+    }
 
     let (round_a_res, dec_a_res, round_b_res, dec_b_res) = tokio::join!(
         client.call(feed_a, LATEST_ROUND_DATA_SELECTOR),
@@ -37,7 +42,12 @@ pub async fn check_price_deviation(
         }
     };
     let dec_a = match dec_a_res.and_then(|h| decode_word_u128(&h, 0)) {
-        Ok(d) => d as u32,
+        Ok(d) => match u32::try_from(d) {
+            Ok(v) => v,
+            Err(_) => {
+                return GuardrailResult::block("feedA decimals unrepresentable — BLOCK");
+            }
+        },
         Err(e) => return GuardrailResult::block(format!("failed to query feedA decimals: {}", e)),
     };
 
@@ -48,7 +58,12 @@ pub async fn check_price_deviation(
         }
     };
     let dec_b = match dec_b_res.and_then(|h| decode_word_u128(&h, 0)) {
-        Ok(d) => d as u32,
+        Ok(d) => match u32::try_from(d) {
+            Ok(v) => v,
+            Err(_) => {
+                return GuardrailResult::block("feedB decimals unrepresentable — BLOCK");
+            }
+        },
         Err(e) => return GuardrailResult::block(format!("failed to query feedB decimals: {}", e)),
     };
 
@@ -61,6 +76,20 @@ pub async fn check_price_deviation(
 
     if ans_a <= 0 || ans_b <= 0 {
         return GuardrailResult::block("one or both feeds returned non-positive price — BLOCK");
+    }
+
+    // Never compare stale or incomplete rounds: a manipulated single-oracle
+    // reading must not become the deviation baseline.
+    for (label, round) in [("feedA", &round_a), ("feedB", &round_b)] {
+        if round.3 == 0 {
+            return GuardrailResult::block(format!("{} has no data (updatedAt 0) — BLOCK", label));
+        }
+        if round.4 < round.0 {
+            return GuardrailResult::block(format!(
+                "{} incomplete round: answeredInRound < roundId — BLOCK",
+                label
+            ));
+        }
     }
 
     let price_a = (ans_a as f64) / 10_f64.powi(dec_a as i32);
@@ -179,5 +208,20 @@ mod tests {
 
         assert!(!res.allow_execute);
         assert!(res.reason.contains("ORACLE DEVIATION DANGER"));
+    }
+
+    #[tokio::test]
+    async fn test_self_comparison_blocked() {
+        let mock = MockRpcClient::default();
+        let res = check_price_deviation(
+            &mock,
+            "0x1111111111111111111111111111111111111111",
+            "0x1111111111111111111111111111111111111111",
+            2.0,
+        )
+        .await;
+
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("self-comparison"));
     }
 }

@@ -13,21 +13,26 @@ pub async fn check_paused(client: &dyn EvmRpcClient, contract: &str) -> Guardrai
     let is_paused = match client.call(contract, PAUSED_SELECTOR).await {
         Ok(hex_data) => match decode_bool(&hex_data) {
             Ok(b) => b,
-            Err(_) => {
-                // Return data is empty or not a bool -> does not implement paused()
-                return GuardrailResult::allow(format!(
-                    "contract {} does not implement paused() — safely ALLOW",
-                    contract
+            Err(e) => {
+                // Malformed return data must fail closed: an attacker-controlled
+                // contract could return garbage to force an ALLOW.
+                return GuardrailResult::block(format!(
+                    "failed to decode paused() response from {} — BLOCK (fail closed): {}",
+                    contract, e
                 ));
             }
         },
         Err(e) => {
             let lower = e.to_lowercase();
-            // Contract without paused() reverts on call:
+            // Contract without paused() reverts on call. Match only explicit
+            // revert indicators — never bare "0x", which matches almost any
+            // hex-containing transport error and would misclassify real
+            // RPC failures as ALLOW.
             if lower.contains("revert")
                 || lower.contains("invalid opcode")
                 || lower.contains("function not found")
-                || lower.contains("0x")
+                || lower.contains("unknown function")
+                || lower.contains("execution reverted")
             {
                 return GuardrailResult::allow(format!(
                     "contract {} does not implement paused() (call reverted) — safely ALLOW",
@@ -106,5 +111,30 @@ mod tests {
         let res = check_paused(&mock, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").await;
         assert!(!res.allow_execute);
         assert!(res.reason.contains("RPC error"));
+    }
+
+    #[tokio::test]
+    async fn test_malformed_paused_response_blocks_fail_closed() {
+        let mock = MockRpcClient {
+            call_handler: Some(Arc::new(move |_, _| Ok("0xdead".to_string()))),
+            ..Default::default()
+        };
+
+        let res = check_paused(&mock, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").await;
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("fail closed"));
+    }
+
+    #[tokio::test]
+    async fn test_hex_transport_error_no_longer_forces_allow() {
+        let mock = MockRpcClient {
+            call_handler: Some(Arc::new(move |_, _| {
+                Err("HTTP 504 Gateway Timeout 0x1234".to_string())
+            })),
+            ..Default::default()
+        };
+
+        let res = check_paused(&mock, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").await;
+        assert!(!res.allow_execute);
     }
 }

@@ -12,11 +12,11 @@ pub async fn check_sanctioned(client: &dyn EvmRpcClient, address: &str) -> Guard
         return GuardrailResult::block(format!("invalid address {} — BLOCK", address));
     }
 
-    let calldata = format!(
-        "{}{}",
-        IS_SANCTIONED_SELECTOR,
-        encode_address_param(address)
-    );
+    let encoded = match encode_address_param(address) {
+        Ok(e) => e,
+        Err(e) => return GuardrailResult::block(format!("{} — BLOCK (fail closed)", e)),
+    };
+    let calldata = format!("{}{}", IS_SANCTIONED_SELECTOR, encoded);
 
     let is_sanctioned = match client.call(SANCTIONS_ORACLE, &calldata).await {
         Ok(hex_data) => match decode_bool(&hex_data) {
