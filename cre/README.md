@@ -1,9 +1,9 @@
 # stale — CRE simulation
 
-Local simulation of the same check as `src/checkPrice` but via Chainlink CRE TypeScript workflow.
+Local simulation of the same check as `check_price` (`src/check.rs`) but via Chainlink CRE TypeScript workflow.
 
-- Reads `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` (ETH/USD Ethereum mainnet) via `PriceFeedAggregator` `latestRoundData` + `decimals` (chain-read only) — CRE binds chain via `chainName: ethereum-mainnet` / `getNetwork` selector; Node `checkPrice` additionally verifies `eth_chainId === 1` for this default feed and `BLOCK`s on mismatch.
-- Uses `isStale` (`cre/lib/isStale.ts` — keep in sync with `src/isStale.ts`) and `quoteFromFeed` (`cre/lib/quote.ts` — keep in sync with `src/quote.ts`).
+- Reads `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` (ETH/USD Ethereum mainnet) via `PriceFeedAggregator` `latestRoundData` + `decimals` (chain-read only) — CRE binds chain via `chainName: ethereum-mainnet` / `getNetwork` selector. Note: the Rust `check_price` does NOT itself verify `eth_chainId` — compose with `check_chain_id` when chain confusion is in scope (see `SECURITY.md`).
+- Uses `isStale` (`cre/lib/isStale.ts` — keep in sync with `src/is_stale.rs`) and `quoteFromFeed` (`cre/lib/quote.ts` — keep in sync with `src/quote.rs`).
 - Quote values are v1 display values, not settlement-grade amounts; they use
   `formatUnits` and JavaScript `Number` arithmetic.
 - Fail closed on RPC/read/zero/negative/stale/future. No EVM write, no wallet, no `--broadcast`, no DON deploy.
@@ -63,8 +63,8 @@ If `allowExecute` is `false`, `execute` is `{"action":"none","note":"skipped —
 cre/
   project.yaml                 # rpcs for ethereum-mainnet (copied keys from read-data-feeds-ts template)
   contracts/evm/ts/generated/PriceFeedAggregator.ts
-  lib/isStale.ts               # keep in sync with src/isStale.ts
-  lib/quote.ts                 # keep in sync with src/quote.ts
+  lib/isStale.ts               # keep in sync with src/is_stale.rs
+  lib/quote.ts                 # keep in sync with src/quote.rs
   workflows/stale/
     main.ts                    # Runner entry
     workflow.ts                # onCron + initWorkflow (chain-read only)
@@ -78,7 +78,7 @@ cre/
 ## Verify
 
 ```bash
-npm test                       # 19 tests in src/*.test.ts must still pass
+cargo test --all-targets        # Rust guardrails (from repo root)
 cre workflow simulate --help   # must exist, do not fake success
 cre workflow simulate ./cre/workflows/stale --config ./cre/workflows/stale/config.staging.json --allow-insecure-rpc
 ```
@@ -87,4 +87,4 @@ No Aave, CCIP, CRE write, Agents, x402, keys, or live DON calls.
 
 ## Related
 
-Root `README.md` → `CRE simulation` section links here.
+Root `README.md` (CLI section) links here as the CRE entry point.

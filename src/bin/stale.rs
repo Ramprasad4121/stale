@@ -24,6 +24,11 @@ struct Cli {
     #[arg(long)]
     max_age: Option<i64>,
 
+    /// Comma-separated RPC hosts allowed for egress (SSRF guard).
+    /// Unset = unrestricted (legacy).
+    #[arg(long)]
+    allowed_rpc_hosts: Option<String>,
+
     /// Data Feed proxy address
     #[arg(long, default_value = DEFAULT_FEED)]
     feed: String,
@@ -41,14 +46,19 @@ struct Cli {
 enum Commands {
     /// Check a Chainlink price feed
     Check {
+        /// Ethereum RPC URL
         #[arg(long)]
         rpc: String,
+        /// Max allowed age in seconds
         #[arg(long)]
         max_age: i64,
+        /// Data Feed proxy address
         #[arg(long, default_value = DEFAULT_FEED)]
         feed: String,
+        /// Human amount for quote (e.g. 0.5)
         #[arg(long)]
         amount: Option<f64>,
+        /// Output single JSON object
         #[arg(long)]
         json: bool,
         /// Comma-separated RPC hosts allowed for egress (SSRF guard).
@@ -58,19 +68,25 @@ enum Commands {
     },
     /// Test staleness calculation without RPC
     IsStale {
+        /// Feed updatedAt timestamp (unix seconds)
         #[arg(long)]
         updated_at: i64,
+        /// Max allowed age in seconds
         #[arg(long)]
         max_age: i64,
+        /// Override now timestamp (default: system clock)
         #[arg(long)]
         now: Option<i64>,
     },
     /// Compute price quote from raw feed answer and decimals
     Quote {
+        /// Raw feed answer (signed integer)
         #[arg(long)]
         answer: i128,
+        /// Feed decimals (0-36)
         #[arg(long)]
         decimals: u8,
+        /// Human amount for quote (e.g. 0.5)
         #[arg(long)]
         amount: Option<f64>,
     },
@@ -137,11 +153,21 @@ async fn main() {
         }
         None => {
             if let (Some(rpc), Some(max_age)) = (cli.rpc, cli.max_age) {
-                run_check(&rpc, max_age, &cli.feed, cli.amount, cli.json, None).await;
+                run_check(
+                    &rpc,
+                    max_age,
+                    &cli.feed,
+                    cli.amount,
+                    cli.json,
+                    cli.allowed_rpc_hosts,
+                )
+                .await;
             } else {
                 eprintln!("Error: missing required arguments --rpc and --max-age");
                 eprintln!("Run `stale --help` for usage information.");
-                std::process::exit(1);
+                // Usage error (exit 2), distinct from guard verdicts:
+                // 0 = ALLOW, 1 = BLOCK, 2 = usage/config error.
+                std::process::exit(2);
             }
         }
     }

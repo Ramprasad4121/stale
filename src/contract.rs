@@ -2,6 +2,12 @@
 //!
 //! Blocks EOAs (empty code) and EIP-7702 delegated EOAs (`0xef0100…`),
 //! which are revocable delegations — not immutable contracts.
+//!
+//! # What this does NOT prove
+//! Has-bytecode is necessary but not sufficient: proxies, upgradeable
+//! contracts, `delegatecall` targets, and honeypots all HAVE bytecode and
+//! pass this guard. Compose with [`crate::addressbook::AddressBook`]
+//! (allowlist known contracts) for unknown targets.
 
 use crate::addressbook::is_valid_eth_address;
 use crate::rpc::EvmRpcClient;

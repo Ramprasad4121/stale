@@ -21,6 +21,7 @@ pub const BTC_USD_FEED: &str = "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c";
 pub const USDC_USD_FEED: &str = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 /// One allowlisted feed proxy: checksummed address, pair symbol, chain id.
 pub struct FeedEntry {
     pub address: &'static str,

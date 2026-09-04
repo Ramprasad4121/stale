@@ -16,7 +16,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-stale = "1.0.0"
+stale = "1.0.2"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -114,9 +114,9 @@ async fn main() {
 
 ### Oracles & Feeds
 - **`check_price`**: Validates Chainlink Data Feed round completeness, age, and pricing.
-- **`check_price_deviation`**: Compares two independent price feeds to detect single-oracle manipulation.
+- **`check_price_deviation`**: Compares two independent price feeds to detect single-oracle manipulation (library only — no CLI subcommand or MCP tool; integrate via the Rust API).
 - **`is_stale`**: Pure, offline staleness and clock-skew math without network calls.
-- **`lookup_feed`**: Static registry for Ethereum, Arbitrum, Optimism, Base, and Polygon.
+- **`lookup_feed`**: Static registry (`src/feeds.rs`, 15 feeds across Ethereum, Arbitrum, Optimism, Base, Polygon, zkSync, Metis, Mantle, and Scroll).
 
 ### Network & Infrastructure
 - **`check_gas_price`**: BLOCKs when `eth_gasPrice` exceeds policy (integer-wei compare, `f64` display-only); RPC failure or `0` policy → BLOCK.
@@ -145,7 +145,7 @@ async fn main() {
 - **`RateLimiter`**: Rolling sliding-window transaction frequency governor.
 - **`SpendingCap`**: Rolling sliding-window cumulative spending cap.
 - **`AuditLogger`**: Structured JSON logging of every ALLOW and BLOCK event.
-- **`check_is_contract`**: Verifies target address has bytecode (`eth_getCode`), blocking EOA phishing traps.
+- **`check_is_contract`**: Verifies target address has bytecode (`eth_getCode`), blocking EOA phishing traps. Proves has-bytecode only — proxies, upgradeables, and honeypots pass; compose with `AddressBook` for unknown targets.
 - **`check_sanctioned`**: Queries the Chainlink OFAC Sanctions Oracle.
 
 ---
@@ -186,6 +186,10 @@ stale is-stale --updated-at 1700000000 --max-age 60
 # Print supported feeds
 stale feeds
 ```
+
+Exit-code contract: `0` = ALLOW, `1` = BLOCK (or guard failure), `2` = usage/config error. `--json` prints the machine-readable result object.
+
+Chainlink CRE simulation (TypeScript workflow mirroring `check_price`): see [`cre/README.md`](cre/README.md).
 
 ---
 

@@ -1,4 +1,4 @@
-# @ramprasad4121/stale
+# stale Changelog
 
 ## Unreleased
 
@@ -28,6 +28,18 @@
 ### New Guards
 
 - `check_gas_price_1559(client, max_base_fee_gwei, max_priority_fee_gwei)`: EIP-1559 circuit breaker enforcing base fee and tip independently. New `EvmRpcClient::{get_base_fee, get_priority_fee}` have fail-closed default bodies (`Err`), so external transports are never silently treated as 1559-capable.
+
+### Docs Drift Fixes
+
+- README dependency pin `1.0.0` → `1.0.2`; registry scope corrected (15 feeds / 9 chains); `check_price_deviation` library-only gap documented; `check_is_contract` proxy caveat; CLI exit-code contract (`0` ALLOW / `1` BLOCK / `2` usage) documented; CRE pointer added. CLI `--help` descriptions filled; legacy top-level path plumbs `--allowed-rpc-hosts`; usage errors exit `2`. `FeedEntry` serializes camelCase (`chainId`). Live example uses 3600s max-age and warns (not asserts) on flaky live checks. `cre/README` paths point at the Rust sources; `cre` package versions aligned to `1.0.2`.
+
+## 1.0.2
+
+- Real-world mainnet audit fixes over 1.0.1.
+
+## 1.0.1
+
+- Resolved all audit findings and hardened fail-closed invariants over 1.0.0.
 
 ## 1.0.0
 
