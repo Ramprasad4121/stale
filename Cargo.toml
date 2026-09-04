@@ -1,6 +1,6 @@
 [package]
 name = "stale"
-version = "1.0.2"
+version = "2.0.0"
 edition = "2021"
 authors = ["Ramprasad Goud <ramprasadgoud34@gmail.com>"]
 description = "Fail-closed DeFi security guardrails for autonomous AI agents"
