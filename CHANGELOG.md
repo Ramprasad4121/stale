@@ -1,16 +1,18 @@
 # stale Changelog
 
+> **Release note:** `Unreleased` contains breaking API changes (`encode_address_param` → `Result`, `check_sanctioned` chain gate, `check_balance` gas reserve, `SimulateTxInput.value`, `PipelineResult.guards_skipped`). The next release MUST bump major (or at minimum minor with migration notes) per semver — do not ship these as a patch.
+
 ## Unreleased
 
 ### Breaking Changes
 
 - `encode_address_param` now returns `Result` and rejects non-40-hex-char input instead of silently truncating (PR #41).
 - `slippage_bps == 10000` (100%) is rejected; it would allow total loss (PR #41).
-- `check_sanctioned` takes a `chain_id` argument and BLOCKs on any chain other than mainnet, where the oracle lives (this PR).
+- `check_sanctioned` takes a `chain_id` argument and BLOCKs on any chain other than mainnet, where the oracle lives (PR #44).
 - `stale is-stale` exits 1 on BLOCK, matching `stale check` (PR #41).
 - `stale-mcp stale_quote` requires explicit `decimals` (no silent default) and caps at the on-chain maximum (PR #41).
 - `stale-mcp stale_isStale` errors on missing `nowSeconds`/`maxAgeSeconds` instead of defaulting to 0 (PR #41).
-- `AuditLogger::record` secret-scrubs reasons and metadata (embedded credentials become `<redacted>`) (this PR).
+- `AuditLogger::record` secret-scrubs reasons and metadata (embedded credentials become `<redacted>`) (PR #44).
 
 ### Breaking Changes (round 3)
 
@@ -39,7 +41,7 @@
 
 ### Docs Drift Fixes
 
-- README dependency pin `1.0.0` → `1.0.2`; registry scope corrected (15 feeds / 9 chains); `check_price_deviation` library-only gap documented; `check_is_contract` proxy caveat; CLI exit-code contract (`0` ALLOW / `1` BLOCK / `2` usage) documented; CRE pointer added. CLI `--help` descriptions filled; legacy top-level path plumbs `--allowed-rpc-hosts`; usage errors exit `2`. `FeedEntry` serializes camelCase (`chainId`). Live example uses 3600s max-age and warns (not asserts) on flaky live checks. `cre/README` paths point at the Rust sources; `cre` package versions aligned to `1.0.2`.
+- README dependency pin `1.0.0` → `1.0.2`; registry scope corrected (15 feeds / 9 chains); `check_price_deviation` library-only gap documented; `check_is_contract` proxy caveat; CLI exit-code contract (`0` ALLOW / `1` BLOCK / `2` usage) documented; CRE pointer added. CLI `--help` descriptions filled; legacy top-level path plumbs `--allowed-rpc-hosts`; usage errors exit `2`. `FeedEntry` serializes camelCase (`chainId`). Live example uses 3600s max-age; pool/solvency/gas checks warn (not asserts) on flaky live state, while identity/compliance checks (feed, sanctions, EOA, contract, pause, sequencer) keep hard asserts — the canary depends on them to alert. `cre/README` paths point at the Rust sources; `cre` package versions aligned to `1.0.2`.
 
 ## 1.0.2
 

@@ -97,20 +97,21 @@ pub mod prelude {
     pub use crate::deadline::{check_deadline, CheckDeadlineInput};
     pub use crate::deviation::check_price_deviation;
     pub use crate::dex::{check_pool_v2, check_pool_v3};
-    pub use crate::feeds::{lookup_feed, DEFAULT_FEED};
+    pub use crate::feeds::{lookup_feed, FeedEntry, DEFAULT_FEED, FEEDS, REGISTRY};
     pub use crate::gas::{check_gas_price, check_gas_price_1559};
     pub use crate::honeypot::check_token_tax;
-    pub use crate::is_stale::{is_stale, IsStaleInput};
-    pub use crate::mev::check_mev_rpc;
+    pub use crate::is_stale::{is_stale, IsStaleInput, IsStaleResult};
+    pub use crate::mev::{check_mev_rpc, MEV_PROTECTED_RPCS};
     pub use crate::network::{check_chain_id, check_nonce, check_rpc_sync};
     pub use crate::pausable::check_paused;
     pub use crate::pipeline::{
-        create_guard_pipeline, GuardPipeline, PipelineMode, DEFAULT_GUARD_TIMEOUT,
+        create_guard_pipeline, GuardExecutionReport, GuardPipeline, PipelineMode, PipelineResult,
+        DEFAULT_GUARD_TIMEOUT, MAX_GUARDS,
     };
-    pub use crate::quote::{quote_from_feed, QuoteInput};
+    pub use crate::quote::{quote_from_feed, QuoteInput, QuoteResult};
     pub use crate::ratelimit::{RateLimiter, SpendingCap};
-    pub use crate::rpc::{is_rpc_host_allowed, EvmRpcClient, HttpRpcClient};
-    pub use crate::sanctions::check_sanctioned;
+    pub use crate::rpc::{is_rpc_host_allowed, DynRpcClient, EvmRpcClient, HttpRpcClient};
+    pub use crate::sanctions::{check_sanctioned, SANCTIONS_ORACLE};
     pub use crate::sequencer::check_sequencer;
     pub use crate::simulate::{simulate_tx, SimulateTxInput};
     pub use crate::slippage::{calculate_min_amount_out, CalculateMinAmountOutInput};
@@ -121,4 +122,47 @@ pub mod prelude {
 /// Crate version (`CARGO_PKG_VERSION`).
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
+}
+
+#[cfg(test)]
+mod prelude_tests {
+    // Compile-time proof that the prelude resolves every name a README
+    // quickstart or integrator might annotate. If an export is dropped
+    // from the prelude, this test fails to compile.
+    use crate::prelude::*;
+
+    #[test]
+    fn test_prelude_resolves_key_types() {
+        fn _uses_guards(
+            _: AddressBook,
+            _: AuditEntry,
+            _: CheckPriceInput<'_>,
+            _: CheckPriceResult,
+            _: FeedEntry,
+            _: GuardExecutionReport,
+            _: IsStaleInput,
+        ) {
+        }
+        fn _uses_more(
+            _: IsStaleResult,
+            _: PipelineResult,
+            _: QuoteInput,
+            _: QuoteResult,
+            _: CalculateMinAmountOutInput,
+            _: CheckDeadlineInput,
+            _: SimulateTxInput<'_>,
+        ) {
+        }
+        fn _uses_trait_objects(_: DynRpcClient) {}
+        let _ = check_price;
+        let _ = check_prices;
+        assert_eq!(MAX_GUARDS, 64);
+        assert!(!MEV_PROTECTED_RPCS.is_empty());
+        assert!(!FEEDS.is_empty());
+        assert!(!REGISTRY.is_empty());
+        assert!(DEFAULT_FEED.starts_with("0x"));
+        assert!(!SANCTIONS_ORACLE.is_empty());
+        assert!(!crate::version().is_empty());
+        assert!(is_rpc_host_allowed("https://a.example", &[]));
+    }
 }

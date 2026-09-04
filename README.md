@@ -17,7 +17,7 @@ Add to your `Cargo.toml`:
 ```toml
 [dependencies]
 stale = "1.0.2"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
 Or install the CLI and MCP server:
@@ -35,18 +35,20 @@ cargo install stale
 ```rust
 use stale::prelude::*;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rpc = HttpRpcClient::new("https://rpc.flashbots.net");
 
-    // 1. Allowlist trusted contracts
+    // 1. Allowlist trusted contracts (strict: unknown → BLOCK)
     let mut allowlist = HashMap::new();
     allowlist.insert("UNISWAP_V3_ROUTER".into(), "0xE592427A0AEce92De3Edee1F18E0157C05861564".into());
-    let book = AddressBook::new(allowlist, true)?;
+    let book = AddressBook::new_strict(allowlist)?;
 
-    // 2. Configure rate limits
-    let mut limiter = RateLimiter::new(10, 60)?; // 10 tx / 60s
+    // 2. Rate limiter, shared into the guard so every preflight acquires
+    //    live. A limiter that is never consulted limits nothing.
+    let limiter = Arc::new(Mutex::new(RateLimiter::new(10, 60)?)); // 10 tx / 60s
 
     // 3. Build pipeline
     let mut pipeline = create_guard_pipeline(PipelineMode::FailFast, None);
@@ -62,16 +64,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         async move { res }
     });
 
+    let limiter_guard = limiter.clone();
+    pipeline.add("rate_limit", move || {
+        let limiter = limiter_guard.clone();
+        async move {
+            limiter
+                .lock()
+                .map(|mut l| l.try_acquire())
+                .unwrap_or_else(|_| {
+                    stale::types::GuardrailResult::block(
+                        "rate limiter lock poisoned — BLOCK (fail closed)",
+                    )
+                })
+        }
+    });
+
     let client = rpc.clone();
     pipeline.add("gas_price", move || {
         let c = client.clone();
         async move { check_gas_price(&c, 40).await } // max 40 Gwei
     });
 
-    // 4. Evaluate
+    let feed_client = rpc.clone();
+    pipeline.add("oracle_freshness", move || {
+        let c = feed_client.clone();
+        async move {
+            let r = check_price(
+                &c,
+                CheckPriceInput {
+                    feed: DEFAULT_FEED, // ETH/USD
+                    max_age_seconds: 60,
+                    amount_eth: None,
+                    now_seconds: None,
+                },
+            )
+            .await;
+            if r.decision == Decision::Allow {
+                GuardrailResult::allow(r.reason)
+            } else {
+                GuardrailResult::block(r.reason)
+            }
+        }
+    });
+
+    // 4. Evaluate (no unwraps: every field is optional on some path)
     let report = pipeline.run().await;
     if report.decision == Decision::Block {
-        eprintln!("Blocked by {}: {}", report.blocked_by.unwrap(), report.reason);
+        eprintln!(
+            "Blocked by {}: {}",
+            report.blocked_by.as_deref().unwrap_or("unknown"),
+            report.reason
+        );
         std::process::exit(1);
     }
 
@@ -101,7 +144,10 @@ async fn main() {
     .await;
 
     if result.decision == Decision::Allow {
-        println!("Price: ${:.2}", result.price_usd.unwrap());
+        match result.price_usd {
+            Some(price) => println!("Price: ${:.2}", price),
+            None => eprintln!("Guard allowed without a price (unexpected)"),
+        }
     } else {
         eprintln!("Price check blocked: {}", result.reason);
     }
@@ -128,7 +174,7 @@ Building an agent on `stale`? Read **[PROMPT.md](PROMPT.md)**: the copy-paste wi
 - **`check_gas_price`**: BLOCKs when `eth_gasPrice` exceeds policy (integer-wei compare, `f64` display-only); RPC failure or `0` policy → BLOCK.
 - **`check_gas_price_1559`**: EIP-1559 circuit breaker enforcing `baseFeePerGas` and `maxPriorityFeePerGas` independently; missing fee / pre-1559 chain → BLOCK.
 - **`check_sequencer`**: Validates L2 sequencer uptime (Arbitrum, OP, Base, Scroll, zkSync, Metis, Mantle) and enforces a 3600s restart grace period.
-- **`check_mev_rpc`**: Ensures the RPC endpoint routes to private builders (Flashbots, MEVBlocker, Titan, Beaver) rather than public mempools.
+- **`check_mev_rpc`**: Ensures the RPC endpoint routes to private builders (Flashbots, MEVBlocker, Titan, Beaver, BloxRoute, Eden) rather than public mempools.
 - **`check_rpc_sync`**: Checks that the RPC node's latest block timestamp is within acceptable drift of current time.
 - **`check_chain_id`**: Guards against cross-chain configuration mistakes.
 - **`check_nonce`**: Detects nonce desynchronization before broadcast.
@@ -186,14 +232,21 @@ stale check --rpc https://ethereum-rpc.publicnode.com --max-age 60 --amount 1.0
 # Emit JSON for shell scripts / CI
 stale check --rpc https://ethereum-rpc.publicnode.com --max-age 60 --json
 
-# Offline timestamp check
+# Restrict RPC egress (SSRF guard; unset = unrestricted)
+stale check --rpc https://ethereum-rpc.publicnode.com --max-age 60 \
+  --allowed-rpc-hosts ethereum-rpc.publicnode.com
+
+# Offline timestamp check (always JSON: decision/ageSeconds/reason)
 stale is-stale --updated-at 1700000000 --max-age 60
+
+# Price math from a raw answer (decimal or 0x hex; always JSON)
+stale quote --answer 250000000000 --decimals 8 --amount 1.0
 
 # Print supported feeds
 stale feeds
 ```
 
-Exit-code contract: `0` = ALLOW, `1` = BLOCK (or guard failure), `2` = usage/config error. `--json` prints the machine-readable result object.
+Exit-code contract: `0` = ALLOW, `1` = BLOCK (or guard failure), `2` = usage/config error (missing flags, negative `--max-age`, unparseable `--answer`). Shapes differ per command: `check --json` emits the full `CheckPriceResult` (incl. `allowExecute`); `is-stale` emits `IsStaleResult` (`decision`/`ageSeconds`/`reason` only); `quote` emits `QuoteResult` (`priceUsd`/`quoteUsd`, no verdict — failures exit `1` with an `Error:` line on stderr).
 
 Chainlink CRE simulation (TypeScript workflow mirroring `check_price`): see [`cre/README.md`](cre/README.md).
 

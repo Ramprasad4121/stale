@@ -119,7 +119,10 @@ pub async fn check_price(
         None => {
             return block_result(
                 input.feed,
-                format!("unknown feed {} (not allowlisted) — BLOCK", input.feed),
+                format!(
+                    "unknown feed {} (not allowlisted) — BLOCK (run `stale feeds` for the allowlisted set)",
+                    input.feed
+                ),
                 input.max_age_seconds,
                 now,
                 input.amount_eth,
