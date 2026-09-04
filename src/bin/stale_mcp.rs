@@ -95,9 +95,9 @@ async fn main() {
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
-                                    "updatedAt": { "type": "string", "description": "updatedAt timestamp as string or number" },
-                                    "nowSeconds": { "type": "integer", "description": "Current time in seconds" },
-                                    "maxAgeSeconds": { "type": "integer", "description": "Max allowed age in seconds" }
+                                    "updatedAt": { "type": ["string", "integer"], "description": "updatedAt timestamp as decimal/0x string or integer" },
+                                    "nowSeconds": { "type": ["integer", "string"], "description": "Current time in seconds (integer or numeric string)" },
+                                    "maxAgeSeconds": { "type": ["integer", "string"], "description": "Max allowed age in seconds (integer or numeric string)" }
                                 },
                                 "required": ["updatedAt", "nowSeconds", "maxAgeSeconds"]
                             }
@@ -108,9 +108,9 @@ async fn main() {
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
-                                    "answer": { "type": "string", "description": "answer as string" },
-                                    "decimals": { "type": "integer", "description": "Feed decimals" },
-                                    "amountEth": { "type": "number", "description": "Human ETH amount for quote" }
+                                    "answer": { "type": ["string", "integer"], "description": "answer as decimal/0x string or integer (floats rejected)" },
+                                    "decimals": { "type": ["integer", "string"], "description": "Feed decimals as integer or numeric string" },
+                                    "amountEth": { "type": ["number", "string"], "description": "Human ETH amount for quote (number or numeric string)" }
                                 },
                                 "required": ["answer", "decimals"]
                             }
@@ -123,9 +123,9 @@ async fn main() {
                                 "properties": {
                                     "rpc": { "type": "string", "description": "Ethereum RPC URL" },
                                     "feed": { "type": "string", "description": "Data Feed proxy address" },
-                                    "maxAgeSeconds": { "type": "integer", "description": "Max allowed age in seconds" },
-                                    "amountEth": { "type": "number", "description": "Human ETH amount for quote" },
-                                    "nowSeconds": { "type": "integer", "description": "Override now timestamp" },
+                                    "maxAgeSeconds": { "type": ["integer", "string"], "description": "Max allowed age in seconds (integer or numeric string)" },
+                                    "amountEth": { "type": ["number", "string"], "description": "Human ETH amount for quote (number or numeric string)" },
+                                    "nowSeconds": { "type": ["integer", "string"], "description": "Override now timestamp (integer or numeric string)" },
                                     "allowedRpcHosts": { "type": "array", "items": { "type": "string" }, "description": "Egress allowlist for the RPC URL host (SSRF guard). Unset = unrestricted." }
                                 },
                                 "required": ["rpc", "feed", "maxAgeSeconds"]
@@ -140,15 +140,27 @@ async fn main() {
 
                 match tool_name {
                     "stale_isStale" => {
-                        let updated_at_str = args.get("updatedAt").and_then(|v| {
-                            if let Some(s) = v.as_str() {
-                                Some(s.to_string())
-                            } else {
-                                v.as_i64().map(|n| n.to_string())
-                            }
-                        });
-                        let now_seconds = match args.get("nowSeconds").and_then(|v| v.as_i64()) {
-                            Some(n) => n,
+                        let updated_at_str = match args.get("updatedAt") {
+                            // Absent stays absent: is_stale BLOCKs on
+                            // missing input (no silent default).
+                            None | Some(Value::Null) => None,
+                            Some(v) => match coerce_answer_str(v) {
+                                Some(s) => Some(s),
+                                None => {
+                                    let _ = stdout.write_all(format!("{}\n", json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": {
+                                            "content": [{"type": "text", "text": "BLOCK — invalid updatedAt (expected decimal/0x string or integer)"}],
+                                            "isError": true
+                                        }
+                                    })).as_bytes()).await;
+                                    let _ = stdout.flush().await;
+                                    continue;
+                                }
+                            },
+                        };
+                        let now_seconds = match args.get("nowSeconds") {
                             None => {
                                 let _ = stdout.write_all(format!("{}\n", json!({
                                     "jsonrpc": "2.0",
@@ -161,12 +173,23 @@ async fn main() {
                                 let _ = stdout.flush().await;
                                 continue;
                             }
+                            Some(v) => match coerce_i64(v) {
+                                Some(n) => n,
+                                None => {
+                                    let _ = stdout.write_all(format!("{}\n", json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": {
+                                            "content": [{"type": "text", "text": "BLOCK — invalid nowSeconds (expected integer seconds)"}],
+                                            "isError": true
+                                        }
+                                    })).as_bytes()).await;
+                                    let _ = stdout.flush().await;
+                                    continue;
+                                }
+                            },
                         };
-                        let max_age_seconds = match args
-                            .get("maxAgeSeconds")
-                            .and_then(|v| v.as_i64())
-                        {
-                            Some(n) => n,
+                        let max_age_seconds = match args.get("maxAgeSeconds") {
                             None => {
                                 let _ = stdout.write_all(format!("{}\n", json!({
                                     "jsonrpc": "2.0",
@@ -179,6 +202,21 @@ async fn main() {
                                 let _ = stdout.flush().await;
                                 continue;
                             }
+                            Some(v) => match coerce_i64(v) {
+                                Some(n) => n,
+                                None => {
+                                    let _ = stdout.write_all(format!("{}\n", json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": {
+                                            "content": [{"type": "text", "text": "BLOCK — invalid maxAgeSeconds (expected integer seconds)"}],
+                                            "isError": true
+                                        }
+                                    })).as_bytes()).await;
+                                    let _ = stdout.flush().await;
+                                    continue;
+                                }
+                            },
                         };
 
                         let parsed_updated_at = updated_at_str.and_then(|s| {
@@ -213,9 +251,36 @@ async fn main() {
                         })
                     }
                     "stale_quote" => {
-                        let answer_str = args.get("answer").and_then(|v| v.as_str()).unwrap_or("");
-                        let decimals_raw = match args.get("decimals").and_then(|v| v.as_u64()) {
-                            Some(d) => d,
+                        let answer_str = match args.get("answer") {
+                            None => {
+                                let _ = stdout.write_all(format!("{}\n", json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": {
+                                        "content": [{"type": "text", "text": "BLOCK — quote failed: missing answer (decimal/0x string or integer)"}],
+                                        "isError": true
+                                    }
+                                })).as_bytes()).await;
+                                let _ = stdout.flush().await;
+                                continue;
+                            }
+                            Some(v) => match coerce_answer_str(v) {
+                                Some(s) => s,
+                                None => {
+                                    let _ = stdout.write_all(format!("{}\n", json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": {
+                                            "content": [{"type": "text", "text": "BLOCK — quote failed: invalid answer (expected decimal/0x string or integer; floats rejected)"}],
+                                            "isError": true
+                                        }
+                                    })).as_bytes()).await;
+                                    let _ = stdout.flush().await;
+                                    continue;
+                                }
+                            },
+                        };
+                        let decimals_raw = match args.get("decimals") {
                             None => {
                                 let _ = stdout.write_all(format!("{}\n", json!({
                                     "jsonrpc": "2.0",
@@ -228,8 +293,41 @@ async fn main() {
                                 let _ = stdout.flush().await;
                                 continue;
                             }
+                            Some(v) => match coerce_u64(v) {
+                                Some(d) => d,
+                                None => {
+                                    let _ = stdout.write_all(format!("{}\n", json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": {
+                                            "content": [{"type": "text", "text": "BLOCK — quote failed: invalid decimals (expected integer 0-36; query the feed's decimals() on-chain, never assume)"}],
+                                            "isError": true
+                                        }
+                                    })).as_bytes()).await;
+                                    let _ = stdout.flush().await;
+                                    continue;
+                                }
+                            },
                         };
-                        let amount = args.get("amountEth").and_then(|v| v.as_f64());
+                        let amount = match args.get("amountEth") {
+                            // Absent means "no quote requested", not zero.
+                            None | Some(Value::Null) => None,
+                            Some(v) => match coerce_f64(v) {
+                                Some(f) => Some(f),
+                                None => {
+                                    let _ = stdout.write_all(format!("{}\n", json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": {
+                                            "content": [{"type": "text", "text": "BLOCK — quote failed: invalid amountEth (expected number or numeric string)"}],
+                                            "isError": true
+                                        }
+                                    })).as_bytes()).await;
+                                    let _ = stdout.flush().await;
+                                    continue;
+                                }
+                            },
+                        };
 
                         if decimals_raw > 36 {
                             let _ = stdout.write_all(format!("{}\n", json!({
@@ -244,7 +342,7 @@ async fn main() {
                             continue;
                         }
                         let decimals = decimals_raw as u8;
-                        let answer = match parse_answer(answer_str) {
+                        let answer = match parse_answer(&answer_str) {
                             Ok(a) => a,
                             Err(_) => {
                                 let _ = stdout.write_all(format!("{}\n", json!({
@@ -271,7 +369,10 @@ async fn main() {
                                     "content": [{
                                         "type": "text",
                                         "text": to_json(&res)
-                                    }]
+                                    }],
+                                    // Uniform verdict contract: success
+                                    // carries explicit isError false.
+                                    "isError": false
                                 }
                             }),
                             Err(e) => json!({
@@ -290,11 +391,7 @@ async fn main() {
                     "stale_check" => {
                         let rpc = args.get("rpc").and_then(|v| v.as_str()).unwrap_or("");
                         let feed = args.get("feed").and_then(|v| v.as_str()).unwrap_or("");
-                        let max_age_seconds = match args
-                            .get("maxAgeSeconds")
-                            .and_then(|v| v.as_i64())
-                        {
-                            Some(n) => n,
+                        let max_age_seconds = match args.get("maxAgeSeconds") {
                             None => {
                                 let _ = stdout.write_all(format!("{}\n", json!({
                                     "jsonrpc": "2.0",
@@ -307,9 +404,58 @@ async fn main() {
                                 let _ = stdout.flush().await;
                                 continue;
                             }
+                            Some(v) => match coerce_i64(v) {
+                                Some(n) => n,
+                                None => {
+                                    let _ = stdout.write_all(format!("{}\n", json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": {
+                                            "content": [{"type": "text", "text": "BLOCK — invalid maxAgeSeconds (expected integer seconds)"}],
+                                            "isError": true
+                                        }
+                                    })).as_bytes()).await;
+                                    let _ = stdout.flush().await;
+                                    continue;
+                                }
+                            },
                         };
-                        let amount_eth = args.get("amountEth").and_then(|v| v.as_f64());
-                        let now_seconds = args.get("nowSeconds").and_then(|v| v.as_i64());
+                        let amount_eth = match args.get("amountEth") {
+                            None | Some(Value::Null) => None,
+                            Some(v) => match coerce_f64(v) {
+                                Some(f) => Some(f),
+                                None => {
+                                    let _ = stdout.write_all(format!("{}\n", json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": {
+                                            "content": [{"type": "text", "text": "BLOCK — invalid amountEth (expected number or numeric string)"}],
+                                            "isError": true
+                                        }
+                                    })).as_bytes()).await;
+                                    let _ = stdout.flush().await;
+                                    continue;
+                                }
+                            },
+                        };
+                        let now_seconds = match args.get("nowSeconds") {
+                            None | Some(Value::Null) => None,
+                            Some(v) => match coerce_i64(v) {
+                                Some(n) => Some(n),
+                                None => {
+                                    let _ = stdout.write_all(format!("{}\n", json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": {
+                                            "content": [{"type": "text", "text": "BLOCK — invalid nowSeconds (expected integer seconds)"}],
+                                            "isError": true
+                                        }
+                                    })).as_bytes()).await;
+                                    let _ = stdout.flush().await;
+                                    continue;
+                                }
+                            },
+                        };
                         let allowed_hosts: Vec<String> = args
                             .get("allowedRpcHosts")
                             .and_then(|v| v.as_array())
@@ -375,5 +521,124 @@ fn parse_answer(s: &str) -> Result<i128, String> {
         Ok(u as i128)
     } else {
         t.parse::<i128>().map_err(|e| e.to_string())
+    }
+}
+
+/// Coerce a JSON arg to `i64`: JSON integer, u64 in range, integral f64,
+/// or decimal/`0x` string. Anything else (float, bool, null, object) is
+/// `None` so the caller reports invalid instead of silently defaulting.
+fn coerce_i64(v: &Value) -> Option<i64> {
+    if let Some(n) = v.as_i64() {
+        return Some(n);
+    }
+    if let Some(n) = v.as_u64() {
+        return i64::try_from(n).ok();
+    }
+    if let Some(f) = v.as_f64() {
+        if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
+            return Some(f as i64);
+        }
+        return None;
+    }
+    if let Some(s) = v.as_str() {
+        return parse_answer(s).ok()?.try_into().ok();
+    }
+    None
+}
+
+/// Coerce a JSON arg to `u64`: JSON integer, integral f64, or
+/// decimal/`0x` string.
+fn coerce_u64(v: &Value) -> Option<u64> {
+    if let Some(n) = v.as_u64() {
+        return Some(n);
+    }
+    if let Some(n) = v.as_i64() {
+        return u64::try_from(n).ok();
+    }
+    if let Some(f) = v.as_f64() {
+        if f.fract() == 0.0 && f >= 0.0 && f <= u64::MAX as f64 {
+            return Some(f as u64);
+        }
+        return None;
+    }
+    if let Some(s) = v.as_str() {
+        let a = parse_answer(s).ok()?;
+        return u64::try_from(a).ok();
+    }
+    None
+}
+
+/// Coerce a JSON arg to `f64`: JSON number or numeric string.
+/// Non-finite results are left to `quote_from_feed`, which BLOCKs them.
+fn coerce_f64(v: &Value) -> Option<f64> {
+    if let Some(f) = v.as_f64() {
+        return Some(f);
+    }
+    if let Some(s) = v.as_str() {
+        return s.trim().parse::<f64>().ok();
+    }
+    None
+}
+
+/// Coerce an answer arg: decimal/`0x` string or JSON integer.
+/// Floats are rejected (precision loss) — the caller reports invalid.
+fn coerce_answer_str(v: &Value) -> Option<String> {
+    if let Some(s) = v.as_str() {
+        return Some(s.to_string());
+    }
+    if let Some(n) = v.as_i64() {
+        return Some(n.to_string());
+    }
+    if let Some(n) = v.as_u64() {
+        return Some(n.to_string());
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_coerce_i64_accepts_int_and_numeric_string() {
+        assert_eq!(coerce_i64(&json!(60)), Some(60));
+        assert_eq!(coerce_i64(&json!("60")), Some(60));
+        assert_eq!(coerce_i64(&json!("0x3c")), Some(60));
+        assert_eq!(coerce_i64(&json!(60.0)), Some(60));
+        assert_eq!(coerce_i64(&json!(u64::MAX)), None);
+        assert_eq!(coerce_i64(&json!(60.5)), None);
+        assert_eq!(coerce_i64(&json!(true)), None);
+        assert_eq!(coerce_i64(&json!(null)), None);
+    }
+
+    #[test]
+    fn test_coerce_u64_accepts_string_decimals() {
+        assert_eq!(coerce_u64(&json!(8)), Some(8));
+        assert_eq!(coerce_u64(&json!("8")), Some(8));
+        assert_eq!(coerce_u64(&json!(-1)), None);
+        assert_eq!(coerce_u64(&json!(8.5)), None);
+    }
+
+    #[test]
+    fn test_coerce_f64_accepts_string_amount() {
+        assert_eq!(coerce_f64(&json!(0.5)), Some(0.5));
+        assert_eq!(coerce_f64(&json!("0.5")), Some(0.5));
+        assert_eq!(coerce_f64(&json!("abc")), None);
+        assert_eq!(coerce_f64(&json!(true)), None);
+    }
+
+    #[test]
+    fn test_coerce_answer_str_accepts_integers_rejects_floats() {
+        assert_eq!(
+            coerce_answer_str(&json!(245377000000i64)),
+            Some("245377000000".to_string())
+        );
+        assert_eq!(
+            coerce_answer_str(&json!("245377000000")),
+            Some("245377000000".to_string())
+        );
+        assert_eq!(coerce_answer_str(&json!(1.5)), None);
+        assert_eq!(coerce_answer_str(&json!(true)), None);
     }
 }
