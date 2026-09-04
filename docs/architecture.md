@@ -19,7 +19,7 @@ In autonomous DeFi systems, any error, timeout, RPC failure, or malformed payloa
 ```
 src/
 ├── lib.rs          # Root exports and prelude
-├── types.rs        # Decision, GuardrailResult, AuditEntry
+├── types.rs        # Decision, GuardrailResult
 ├── is_stale.rs     # Pure offline staleness logic
 ├── quote.rs        # Arbitrary-precision decimal quote math
 ├── feeds.rs        # Static Chainlink Feed Registry (Mainnet, L2s)
@@ -39,7 +39,7 @@ src/
 ├── contract.rs     # Bytecode verification against EOA phishing
 ├── network.rs      # RPC sync, chain ID, and nonce desync checks
 ├── ratelimit.rs    # RateLimiter & SpendingCap sliding windows
-├── audit.rs        # Structured JSON compliance logger
+├── audit.rs        # Structured JSON compliance logger (AuditEntry lives here)
 ├── pipeline.rs     # Composable GuardPipeline with fail-fast execution
 ├── honeypot.rs     # Token transfer tax / honeypot detection
 ├── deviation.rs    # Multi-oracle price deviation guard
