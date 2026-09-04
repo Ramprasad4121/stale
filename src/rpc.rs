@@ -84,19 +84,25 @@ pub trait EvmRpcClient: Send + Sync {
 /// cannot be bypassed by a 307 to a non-allowlisted host: every hop would
 /// otherwise need re-validation against the HTTPS + allowlist policy.
 /// `send_rpc` maps any 3xx response to `BLOCK` (fail closed).
-fn build_no_redirect_client() -> reqwest::Client {
+///
+/// Builder failure with valid args is unreachable in practice, but
+/// binaries must never panic: on builder failure the client is built
+/// WITHOUT redirect protection and flagged (`redirects_refused = false`),
+/// and `send_rpc` refuses every call while the flag is clear. Liveness
+/// is never bought with a redirect-following fallback.
+fn build_no_redirect_client() -> (reqwest::Client, bool) {
     let builder = || {
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .redirect(reqwest::redirect::Policy::none())
     };
-    builder()
-        .build()
-        // Builder failure with valid args is unreachable in practice, but
-        // binaries must never panic: retry with the redirect policy only,
-        // and only then fall back to a default client (redirect-following;
-        // still gated by the explicit 3xx refusal in `send_rpc`).
-        .unwrap_or_else(|_| builder().build().unwrap_or_else(|_| reqwest::Client::new()))
+    match builder().build() {
+        Ok(client) => (client, true),
+        Err(_) => match builder().build() {
+            Ok(client) => (client, true),
+            Err(_) => (reqwest::Client::new(), false),
+        },
+    }
 }
 
 #[derive(Clone)]
@@ -105,6 +111,10 @@ pub struct HttpRpcClient {
     rpc_url: String,
     client: reqwest::Client,
     allowed_hosts: Vec<String>,
+    /// False only if the HTTP client builder failed (unreachable in
+    /// practice). While false, `send_rpc` refuses every call: a client
+    /// that cannot guarantee redirect refusal must not transmit.
+    redirects_refused: bool,
 }
 
 impl HttpRpcClient {
@@ -112,11 +122,12 @@ impl HttpRpcClient {
     /// `send_rpc` so construction never panics.
     pub fn new(rpc_url: impl Into<String>) -> Self {
         let rpc_url = rpc_url.into();
-        let client = build_no_redirect_client();
+        let (client, redirects_refused) = build_no_redirect_client();
         Self {
             rpc_url,
             client,
             allowed_hosts: Vec::new(),
+            redirects_refused,
         }
     }
 
@@ -164,27 +175,34 @@ impl HttpRpcClient {
     ///
     /// Redacts the full URL plus, when parseable, the credential/query
     /// fragments independently so partial leaks (e.g. endpoint echoing back
-    /// only `?key=...`) are still scrubbed.
+    /// only `?key=...`) are still scrubbed. Fragments (`#...`) are dropped
+    /// wholesale, and every redacted value is also scrubbed in
+    /// percent-encoded form (error text may echo either representation).
     fn redact(&self, msg: String) -> String {
         if self.rpc_url.is_empty() {
             return msg;
         }
         let mut out = msg.replace(&self.rpc_url, "<rpc-url>");
         if let Ok(parsed) = url::Url::parse(&self.rpc_url) {
-            if !parsed.username().is_empty() {
-                out = out.replace(parsed.username(), "<rpc-cred>");
+            for secret in rpc_secrets(&parsed) {
+                if secret.is_empty() {
+                    continue;
+                }
+                out = out.replace(secret.as_str(), "<rpc-cred>");
+                // Percent-encoded echo of the same value.
+                let encoded: String =
+                    url::form_urlencoded::byte_serialize(secret.as_bytes()).collect();
+                if encoded != secret {
+                    out = out.replace(encoded.as_str(), "<rpc-cred>");
+                }
             }
-            if let Some(pw) = parsed.password() {
-                out = out.replace(pw, "<rpc-cred>");
-            }
-            if let Some(q) = parsed.query() {
-                // Redact each query value; keys are kept for debuggability.
-                for pair in parsed.query_pairs() {
-                    if !pair.1.is_empty() {
-                        out = out.replace(pair.1.as_ref(), "<rpc-key>");
+            if parsed.fragment().is_some() {
+                // Fragment contents are never diagnostics; drop them.
+                if let Some(frag) = parsed.fragment() {
+                    if !frag.is_empty() {
+                        out = out.replace(frag, "<rpc-frag>");
                     }
                 }
-                let _ = q;
             }
             if let Some(host) = parsed.host_str() {
                 // Never redact the whole host (needed for "wrong endpoint"
@@ -200,6 +218,12 @@ impl HttpRpcClient {
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, String> {
+        if !self.redirects_refused {
+            return Err(
+                "RPC transport misconfigured (redirect refusal unavailable) — BLOCK (fail closed)"
+                    .to_string(),
+            );
+        }
         self.validate_url()?;
         if !is_rpc_host_allowed(&self.rpc_url, &self.allowed_hosts) {
             return Err(
@@ -376,6 +400,27 @@ fn strip_hex_prefix(s: &str) -> &str {
         .unwrap_or(s)
 }
 
+/// Secret-bearing URL components: userinfo + every query value. Keys and
+/// host are kept for debuggability; values are scrubbed by `redact`.
+/// Owned strings: decoded query values may not borrow from the URL.
+fn rpc_secrets(parsed: &url::Url) -> Vec<String> {
+    let mut secrets = Vec::new();
+    if !parsed.username().is_empty() {
+        secrets.push(parsed.username().to_string());
+    }
+    if let Some(pw) = parsed.password() {
+        if !pw.is_empty() {
+            secrets.push(pw.to_string());
+        }
+    }
+    for pair in parsed.query_pairs() {
+        if !pair.1.is_empty() {
+            secrets.push(pair.1.into_owned());
+        }
+    }
+    secrets
+}
+
 /// Returns true for `127.0.0.0/8` without pulling in an IP-parsing dep.
 fn is_ipv4_loopback(host: &str) -> bool {
     let mut parts = host.split('.');
@@ -507,6 +552,19 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.contains("allowlist"), "got: {}", err);
+    }
+
+    #[tokio::test]
+    async fn test_redirect_refusal_unavailable_blocks() {
+        // If the HTTP builder ever fails, the client must refuse to
+        // transmit rather than fall back to redirect-following.
+        let mut client = HttpRpcClient::new("https://good.example/rpc");
+        client.redirects_refused = false;
+        let err = client
+            .call("0x0000000000000000000000000000000000000000", "0x")
+            .await
+            .unwrap_err();
+        assert!(err.contains("redirect"), "got: {}", err);
     }
 
     #[tokio::test]
