@@ -12,7 +12,9 @@
 //! - **Volatile:** state lives in RAM and resets on restart. A restart
 //!   clears the window — persist externally if restart-bypass matters.
 //! - **Bounded:** histories are capped at [`MAX_HISTORY`] entries; excess
-//!   oldest entries are evicted first (fail-closed direction for limiter).
+//!   oldest entries are evicted first. Eviction errs fail-OPEN (fewer
+//!   recorded tx/spend reads as more headroom) — the cap is a DoS bound,
+//!   not a safety bound; window semantics are approximate under flood.
 
 use crate::types::GuardrailResult;
 use std::time::{Duration, Instant};
@@ -53,7 +55,8 @@ impl RateLimiter {
         })
     }
 
-    /// Non-mutating admission test. Prefer [`try_acquire`](Self::try_acquire)
+    /// Admission test. Takes `&mut self` to prune expired entries
+    /// (housekeeping, not a verdict change). Prefer [`try_acquire`](Self::try_acquire)
     /// in production: `check` followed by a separate `record` is TOCTOU —
     /// a caller that forgets `record()` is never limited.
     pub fn check(&mut self) -> GuardrailResult {
@@ -98,7 +101,8 @@ impl RateLimiter {
         verdict
     }
 
-    /// Slots remaining in the current window.
+    /// Slots remaining in the current window. Takes `&mut self` to prune
+    /// expired entries before counting.
     pub fn remaining(&mut self) -> usize {
         let now = Instant::now();
         let window = self.window;
@@ -134,8 +138,9 @@ impl SpendingCap {
         })
     }
 
-    /// Non-mutating admission test for `proposed_amount`. Same TOCTOU
-    /// caveat as [`RateLimiter::check`]: prefer [`try_spend`](Self::try_spend).
+    /// Admission test for `proposed_amount`. Takes `&mut self` to prune
+    /// expired entries (housekeeping). Same TOCTOU caveat as
+    /// [`RateLimiter::check`]: prefer [`try_spend`](Self::try_spend).
     pub fn check(&mut self, proposed_amount: u128) -> GuardrailResult {
         let now = Instant::now();
         let window = self.window;
@@ -183,7 +188,8 @@ impl SpendingCap {
         verdict
     }
 
-    /// Spendable remainder in the current window (saturating).
+    /// Spendable remainder in the current window (saturating). Takes
+    /// `&mut self` to prune expired entries before summing.
     pub fn remaining(&mut self) -> u128 {
         let now = Instant::now();
         let window = self.window;

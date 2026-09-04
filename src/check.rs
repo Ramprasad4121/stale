@@ -316,7 +316,9 @@ pub async fn check_prices(
     feeds: Vec<CheckPriceInput<'_>>,
 ) -> Vec<CheckPriceResult> {
     let mut results = Vec::new();
-    for f in feeds.into_iter().take(MAX_BATCH_FEEDS + 1) {
+    // No `.take()` cap on the iterator: every input gets exactly one row,
+    // so excess entries can never vanish silently (fail closed per row).
+    for f in feeds.into_iter() {
         if results.len() >= MAX_BATCH_FEEDS {
             results.push(CheckPriceResult {
                 decision: Decision::Block,
@@ -481,5 +483,26 @@ mod tests {
 
         assert_eq!(res.decision, Decision::Block);
         assert!(res.reason.contains("not allowlisted"));
+    }
+
+    #[tokio::test]
+    async fn test_check_prices_excess_inputs_each_get_block_row() {
+        let mock = MockRpcClient::default();
+        let inputs: Vec<CheckPriceInput<'_>> = (0..MAX_BATCH_FEEDS + 2)
+            .map(|_| CheckPriceInput {
+                feed: DEFAULT_FEED,
+                max_age_seconds: 60,
+                amount_eth: None,
+                now_seconds: Some(1000),
+            })
+            .collect();
+
+        let rows = check_prices(&mock, inputs).await;
+        // Nothing silently dropped: one row per input.
+        assert_eq!(rows.len(), MAX_BATCH_FEEDS + 2);
+        assert!(rows.iter().all(|r| r.decision == Decision::Block));
+        // Tail rows are the explicit excess-input BLOCKs.
+        assert!(rows[MAX_BATCH_FEEDS].reason.contains("MAX_BATCH_FEEDS"));
+        assert!(rows[MAX_BATCH_FEEDS + 1].reason.contains("MAX_BATCH_FEEDS"));
     }
 }
