@@ -53,7 +53,7 @@ jobs:
 
             Review like a senior engineer:
             - read the diff AND the surrounding file
-            - check isStale, quoteFromFeed, checkPrice, cli, tests, skill.md, CI
+            - check src/is_stale.rs, src/quote.rs, src/check.rs, src/bin/, tests/, PROMPT.md, CI
             - say BLOCKER / SHOULD / NIT
             - no hype, no "great work", no style-only noise
             - if the PR is clean, say so in 5 lines

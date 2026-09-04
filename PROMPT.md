@@ -41,6 +41,8 @@ if report.decision == Decision::Block {
 5. `check_price` only queries feeds in the `src/feeds.rs` registry — unknown addresses BLOCK. It does not verify chain id; compose with `check_chain_id` when chain confusion is in scope.
 6. New transports must fail closed: unimplemented RPC methods return `Err`, and every `Err` becomes a `BLOCK`. Never substitute cached data on failure.
 7. Production freshness policy is `max_age_seconds: 60`. Demos may use larger windows; say so explicitly when you do.
+8. MCP strictness: `stale_isStale` requires explicit `nowSeconds` (no clock default — unlike the CLI); every `content[0].text` is JSON-parseable, including bad-argument rejections. `allowedRpcHosts` must be an array of bare hosts (no ports — ports never match); a wrong type BLOCKs.
+9. Sequencer coverage follows the feed registry: chains without registry feeds (Blast, Linea, Nova) cannot reach the sequencer check via `check_price` — call `check_sequencer(chain_id)` directly for those. `PipelineResult.guardsSkipped` is present only when `FailFast` skips guards — treat it as optional.
 
 **Docs map:** `README.md` (install, guardrails, CLI), `SECURITY.md` (trust model, caveats per guard), `CONTRIBUTING.md` (PR flow, test commands), `cre/README.md` (Chainlink CRE simulation).
 

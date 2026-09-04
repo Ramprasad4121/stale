@@ -110,15 +110,19 @@ via `GuardrailResult::is_allowed()` / `is_blocked()`, not the raw flag.
 
 ## Guard-specific caveats
 
-- `check_paused`: a revert is read as "no `paused()` interface" → `ALLOW`.
-  A malicious contract could `revert` to force that path, so compose with
-  `AddressBook` + `check_is_contract` for unknown targets.
+- `check_paused`: ANY revert → `BLOCK` (fail closed). There is no
+  "no `paused()` interface" allow-path: a malicious contract could
+  `revert` to force one. Compose with `AddressBook` +
+  `check_is_contract` so only known pausable contracts reach this guard.
 - `check_token_tax`: success proves *transferability*, not fair taxation.
   Fee-on-transfer / sell-tax tokens can pass; measure tax separately.
 - `check_pool_v2` / `check_pool_v3`: spot depth at `latest` is flash-loan
   manipulable and unauthenticated. Require allowlisted pools + TWAP/deviation.
 - `check_price_deviation`: checks round *completeness*, not *freshness*.
-  Pair with an explicit `maxAge` policy.
+  Pair with an explicit `maxAge` policy. The verdict itself is exact
+  integer math (basis points, checked `u128`; `f64` is display-only);
+  thresholds below 1 bps behave as 1 bps and thresholds above 100% are
+  rejected.
 - `check_nonce`: requires exact equality; ahead *or* behind → `BLOCK`.
 - `simulate_tx` / `check_allowance` / `check_balance`: check-then-act
   advisories. State can move before broadcast — bind with deadlines,
@@ -130,10 +134,15 @@ via `GuardrailResult::is_allowed()` / `is_blocked()`, not the raw flag.
   hangs and panics into `BLOCK`s attributed to that guard. Max 64 guards.
 - `AuditLogger`: bounded FIFO (`VecDeque`); `Some(0)` capacity coerces to 1.
   Callbacks are panic-isolated but synchronous — keep them non-blocking.
+- `check_sanctioned`: the `chain_id` gate authenticates the chain-id
+  *response*, not the chain itself. A private fork serving `chain_id 1`
+  with an impersonator at the oracle address is outside this guard's
+  trust model — run it against RPC endpoints you operate or trust.
 - Secret scrub (`audit::scrub_secrets`) is ASCII case-insensitive and covers
-  `key=VALUE` forms plus `Bearer`/`Basic` tokens; it is applied both in
+  `key=VALUE` and `"key": "value"` forms plus `Bearer`/`Basic` tokens; it is applied both in
   `AuditLogger::record` and in `GuardPipeline` reports, so neither sink
-  becomes a secret store.
+  becomes a secret store. Bare secrets with no key prefix (raw private
+  keys, mnemonics in prose) are NOT scrubbed by design.
 - `check_mev_rpc`: host-allowlisted private builders, `https` required
   except loopback dev endpoints.
 
@@ -153,11 +162,14 @@ via `GuardrailResult::is_allowed()` / `is_blocked()`, not the raw flag.
 
 ## CLI risks
 
-- `stale check --rpc … --max-age … [--feed …] [--amount …] [--json]`.
+- `stale check --rpc … --max-age … [--feed …] [--amount …] [--json] [--allowed-rpc-hosts …]`.
   Human mode prints decision/reason/price; `--json` prints the result object.
-  Exit `0` on `ALLOW`, `1` on `BLOCK` or usage error.
-- `stale is-stale --updated-at … --max-age … [--now …]`, `stale quote`,
-  `stale feeds` are offline except `check`.
+  Exit `0` on `ALLOW`, `1` on `BLOCK`, `2` on usage/config error
+  (missing flags, negative `--max-age`, unparseable `--answer`).
+- `stale is-stale --updated-at … --max-age … [--now …]` always prints JSON
+  (`IsStaleResult`: `decision`/`ageSeconds`/`reason`, no `allowExecute`);
+  `stale quote --answer … --decimals … [--amount …]` prints the quote JSON
+  on success. Both exit `1` on `BLOCK`/failure, `2` on usage error.
 
 ## Dependency and supply-chain risks
 

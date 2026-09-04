@@ -80,8 +80,8 @@ enum Commands {
     },
     /// Compute price quote from raw feed answer and decimals
     Quote {
-        /// Raw feed answer (signed integer)
-        #[arg(long)]
+        /// Raw feed answer: decimal (e.g. 250000000000) or 0x hex (≤ i128::MAX)
+        #[arg(long, value_parser = parse_answer)]
         answer: i128,
         /// Feed decimals (0-36)
         #[arg(long)]
@@ -106,6 +106,15 @@ fn to_json<T: Serialize>(value: &T) -> String {
 async fn main() {
     let cli = Cli::parse();
 
+    // Top-level flags are only read when NO subcommand is given. Warn
+    // instead of silently dropping a second flag set.
+    if cli.command.is_some() && (cli.rpc.is_some() || cli.max_age.is_some()) {
+        eprintln!(
+            "Warning: top-level --rpc/--max-age are ignored when a subcommand is given; \
+             the subcommand's own flags apply."
+        );
+    }
+
     match cli.command {
         Some(Commands::Check {
             rpc,
@@ -115,6 +124,10 @@ async fn main() {
             json,
             allowed_rpc_hosts,
         }) => {
+            if max_age < 0 {
+                eprintln!("Error: --max-age must be >= 0 (got {max_age})");
+                std::process::exit(2);
+            }
             run_check(&rpc, max_age, &feed, amount, json, allowed_rpc_hosts).await;
         }
         Some(Commands::IsStale {
@@ -122,6 +135,10 @@ async fn main() {
             max_age,
             now,
         }) => {
+            if max_age < 0 {
+                eprintln!("Error: --max-age must be >= 0 (got {max_age})");
+                std::process::exit(2);
+            }
             let now_sec = now.unwrap_or_else(|| chrono::Utc::now().timestamp());
             let res = is_stale(IsStaleInput {
                 updated_at: Some(updated_at),
@@ -142,7 +159,7 @@ async fn main() {
             decimals,
             amount,
         }) {
-            Ok(res) => println!("{}", serde_json::to_string_pretty(&res).unwrap()),
+            Ok(res) => println!("{}", to_json(&res)),
             Err(e) => {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
@@ -171,6 +188,23 @@ async fn main() {
             }
         }
     }
+}
+
+/// Parse `--answer`: decimal or `0x` hex (≤ `i128::MAX`). Anything else
+/// (including out-of-range hex) is a usage error (exit 2), never a quote.
+fn parse_answer(s: &str) -> Result<i128, String> {
+    let t = s.trim();
+    if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+        if hex.is_empty() || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(format!("invalid hex answer {:?}", s));
+        }
+        let magnitude = u128::from_str_radix(hex, 16)
+            .map_err(|e| format!("invalid hex answer {:?}: {}", s, e))?;
+        return i128::try_from(magnitude)
+            .map_err(|_| format!("hex answer {:?} exceeds i128::MAX", s));
+    }
+    t.parse::<i128>()
+        .map_err(|e| format!("invalid decimal answer {:?}: {}", s, e))
 }
 
 /// Parse `--allowed-rpc-hosts a,b` into a host list. Exported for reuse.
@@ -221,5 +255,33 @@ async fn run_check(
 
     if res.decision == stale::types::Decision::Block {
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_answer_decimal_and_hex() {
+        assert_eq!(parse_answer("250000000000").unwrap(), 250000000000);
+        assert_eq!(parse_answer("  42 ").unwrap(), 42);
+        assert_eq!(parse_answer("-7").unwrap(), -7);
+        assert_eq!(parse_answer("0xff").unwrap(), 255);
+        assert_eq!(parse_answer("0XFF").unwrap(), 255);
+        assert!(parse_answer("0x").is_err());
+        assert!(parse_answer("0xZZ").is_err());
+        assert!(parse_answer("abc").is_err());
+        // Beyond i128::MAX must be a usage error, never a wrap.
+        assert!(parse_answer("0xffffffffffffffffffffffffffffffff").is_err());
+    }
+
+    #[test]
+    fn test_parse_allowed_hosts_splits_and_trims() {
+        assert!(parse_allowed_hosts(None).is_empty());
+        assert_eq!(
+            parse_allowed_hosts(Some("a.example, b.example ,, ".to_string())),
+            vec!["a.example".to_string(), "b.example".to_string()]
+        );
     }
 }

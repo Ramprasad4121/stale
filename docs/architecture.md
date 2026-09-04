@@ -21,7 +21,7 @@ src/
 ├── lib.rs          # Root exports and prelude
 ├── types.rs        # Decision, GuardrailResult
 ├── is_stale.rs     # Pure offline staleness logic
-├── quote.rs        # Arbitrary-precision decimal quote math
+├── quote.rs        # f64 display-only quote math (never settlement amounts)
 ├── feeds.rs        # Static Chainlink Feed Registry (Mainnet, L2s)
 ├── rpc.rs          # JSON-RPC 2.0 client & EvmRpcClient trait
 ├── mock.rs         # MockRpcClient for zero-network testing

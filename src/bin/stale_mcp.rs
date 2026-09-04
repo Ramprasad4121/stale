@@ -645,11 +645,23 @@ async fn main() {
                     }),
                 }
             }
-            _ => json!({
+            "ping" => json!({
                 "jsonrpc": "2.0",
                 "id": id,
-                "error": { "code": -32601, "message": format!("Method not found: {}", method) }
+                "result": {}
             }),
+            _ => {
+                // MCP notifications carry no id and expect no response.
+                // Answering them with -32601 breaks strict clients.
+                if method.starts_with("notifications/") {
+                    continue;
+                }
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": { "code": -32601, "message": format!("Method not found: {}", method) }
+                })
+            }
         };
 
         let _ = stdout.write_all(format!("{}\n", response).as_bytes()).await;
