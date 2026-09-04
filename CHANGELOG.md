@@ -27,6 +27,7 @@
 - SSRF redirect bypass (#51): `HttpRpcClient` never follows redirects (`Policy::none`); any `3xx` → BLOCK, so a 307 cannot smuggle egress past the RPC allowlist. Covered by a zero-egress regression test.
 - Audit scrub gaps (#57): `scrub_secrets` is now ASCII case-insensitive with an extended key list (`password`, `private_key`, `mnemonic`, `bearer`, …) plus `Bearer`/`Basic` token masking; `GuardPipeline` reports scrub reasons identically so serialized reports cannot re-leak.
 - Pipeline timeout task leak: expired guards are now `abort()`ed instead of running detached past the verdict.
+- Sequencer coverage gaps (#55): Blast / Linea / Arbitrum Nova have centralized sequencers but no configured uptime feed — `check_sequencer` BLOCKed loudly there instead of silently passing. No feed addresses invented; adding them is a registry change.
 
 - PR #41: `is_stale`/`deadline` overflow → BLOCK; `updatedAt > i64::MAX` → BLOCK; negative `now` → BLOCK; decimals validity cap; sequencer unexpected-answer/incomplete-round → BLOCK; `pausable` malformed-response and RPC-error misclassification → BLOCK; slippage checked math; deviation self-comparison/stale-round → BLOCK; RPC 10s timeout, HTTPS-only (except localhost), URL redaction; `decode_round_data` exact-length check.
 - PR #43: RPC parsed-host validation, 1 MiB response cap; pipeline per-guard timeout + panic isolation + `MAX_GUARDS`; atomic rate-limiter acquisition + history cap; audit FIFO; nonce exact-equality; `check_prices` bounded at 64; release/dev `overflow-checks=true`.

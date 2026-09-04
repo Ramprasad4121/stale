@@ -7,7 +7,7 @@
 //! — the caller maps every `Some` to BLOCK.
 
 use crate::abi::decode_round_data;
-use crate::feeds::get_sequencer_feed;
+use crate::feeds::{get_sequencer_feed, is_unconfigured_sequenced_l2};
 use crate::rpc::EvmRpcClient;
 
 pub const SEQUENCER_SELECTOR: &str = "0xfeaf968c";
@@ -17,6 +17,9 @@ pub const GRACE_PERIOD_SECONDS: u64 = 3600;
 /// Validates L2 sequencer status using the official Chainlink Uptime Feed.
 /// Returns Ok(None) if L2 is up and past grace period, or if chain has no sequencer feed.
 /// Returns Ok(Some(reason)) or Err(reason) if sequencer is down, in grace period, or query failed.
+///
+/// A sequenced L2 with no configured feed (Blast, Linea, Arbitrum Nova)
+/// returns `Some` — loud unprotected-sequencer BLOCK, never a silent pass.
 ///
 /// # Params
 /// - `chain_id`: EVM chain id (non-L2 / unknown → `None`, no check).
@@ -28,7 +31,15 @@ pub async fn check_sequencer(
 ) -> Option<String> {
     let feed_address = match get_sequencer_feed(chain_id) {
         Some(addr) => addr,
-        None => return None, // Not an L2 or no feed configured
+        None => {
+            if is_unconfigured_sequenced_l2(chain_id) {
+                return Some(format!(
+                    "chain {} has a centralized sequencer but no uptime feed is configured — BLOCK (fail closed: add the feed, do not assume liveness)",
+                    chain_id
+                ));
+            }
+            return None; // Not an L2 or no feed configured
+        }
     };
 
     match client.call(feed_address, SEQUENCER_SELECTOR).await {
@@ -167,5 +178,29 @@ mod tests {
         let res = check_sequencer(ARBITRUM_CHAIN_ID, &mock, 5000).await;
         assert!(res.is_some());
         assert!(res.unwrap().contains("fail closed"));
+    }
+
+    #[tokio::test]
+    async fn test_unconfigured_sequenced_l2_blocks_loudly() {
+        use crate::feeds::{ARBITRUM_NOVA_CHAIN_ID, BLAST_CHAIN_ID, LINEA_CHAIN_ID};
+        // No RPC interaction at all: the BLOCK fires before any call.
+        let mock = MockRpcClient::default();
+        for chain in [BLAST_CHAIN_ID, LINEA_CHAIN_ID, ARBITRUM_NOVA_CHAIN_ID] {
+            let res = check_sequencer(chain, &mock, 5000).await;
+            assert!(res.is_some(), "chain {} must not silently pass", chain);
+            assert!(
+                res.unwrap().contains("no uptime feed is configured"),
+                "chain {}",
+                chain
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_non_sequenced_chain_still_passes() {
+        use crate::feeds::{MAINNET_CHAIN_ID, POLYGON_CHAIN_ID};
+        let mock = MockRpcClient::default();
+        assert_eq!(check_sequencer(MAINNET_CHAIN_ID, &mock, 5000).await, None);
+        assert_eq!(check_sequencer(POLYGON_CHAIN_ID, &mock, 5000).await, None);
     }
 }
