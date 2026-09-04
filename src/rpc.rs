@@ -78,6 +78,27 @@ pub trait EvmRpcClient: Send + Sync {
     async fn get_code(&self, address: &str) -> Result<String, String>;
 }
 
+/// Build the shared HTTP client: 10s timeout, redirects disabled.
+///
+/// Redirects are refused outright (`Policy::none`) so the SSRF allowlist
+/// cannot be bypassed by a 307 to a non-allowlisted host: every hop would
+/// otherwise need re-validation against the HTTPS + allowlist policy.
+/// `send_rpc` maps any 3xx response to `BLOCK` (fail closed).
+fn build_no_redirect_client() -> reqwest::Client {
+    let builder = || {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::none())
+    };
+    builder()
+        .build()
+        // Builder failure with valid args is unreachable in practice, but
+        // binaries must never panic: retry with the redirect policy only,
+        // and only then fall back to a default client (redirect-following;
+        // still gated by the explicit 3xx refusal in `send_rpc`).
+        .unwrap_or_else(|_| builder().build().unwrap_or_else(|_| reqwest::Client::new()))
+}
+
 #[derive(Clone)]
 /// HTTPS-enforcing `reqwest`-backed [`EvmRpcClient`] with a 10s timeout.
 pub struct HttpRpcClient {
@@ -91,10 +112,7 @@ impl HttpRpcClient {
     /// `send_rpc` so construction never panics.
     pub fn new(rpc_url: impl Into<String>) -> Self {
         let rpc_url = rpc_url.into();
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+        let client = build_no_redirect_client();
         Self {
             rpc_url,
             client,
@@ -203,6 +221,13 @@ impl HttpRpcClient {
             .send()
             .await
             .map_err(|e| self.redact(format!("rpc network error: {}", e)))?;
+
+        if resp.status().is_redirection() {
+            return Err(
+                "rpc redirect refused (SSRF guard: redirects are never followed) — BLOCK (fail closed)"
+                    .to_string(),
+            );
+        }
 
         if !resp.status().is_success() {
             return Err(format!("rpc http error {}", resp.status()));
@@ -482,5 +507,77 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.contains("allowlist"), "got: {}", err);
+    }
+
+    #[tokio::test]
+    async fn test_redirect_refused_with_zero_egress_to_target() {
+        use std::io::{Read, Write};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::{Duration, Instant};
+
+        // Target server: counts connections; serves a VALID response so a
+        // redirect-following client would return Ok (proving the bypass).
+        let target = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let target_port = target.local_addr().unwrap().port();
+        let hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let hits_thread = hits.clone();
+        let target_thread = std::thread::spawn(move || {
+            target.set_nonblocking(true).unwrap();
+            let deadline = Instant::now() + Duration::from_millis(500);
+            while Instant::now() < deadline {
+                match target.accept() {
+                    Ok((mut s, _)) => {
+                        hits_thread.fetch_add(1, Ordering::SeqCst);
+                        let mut buf = [0u8; 4096];
+                        let _ = s.read(&mut buf);
+                        let body = r#"{"jsonrpc":"2.0","id":1,"result":"0x1"}"#;
+                        let _ = s.write_all(
+                            format!(
+                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                body.len(),
+                                body
+                            )
+                            .as_bytes(),
+                        );
+                        break;
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        // Redirector: single 307 to the target, then done.
+        let redir = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let redir_port = redir.local_addr().unwrap().port();
+        let redir_thread = std::thread::spawn(move || {
+            let (mut s, _) = redir.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = s.read(&mut buf);
+            let resp = format!(
+                "HTTP/1.1 307 Temporary Redirect\r\nLocation: http://127.0.0.1:{}/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                target_port
+            );
+            let _ = s.write_all(resp.as_bytes());
+        });
+
+        let client = HttpRpcClient::new(format!("http://127.0.0.1:{}/", redir_port))
+            .with_allowed_hosts(vec!["127.0.0.1".to_string()]);
+        let err = client.get_block_number().await.unwrap_err();
+        assert!(
+            err.contains("redirect"),
+            "redirect must fail closed, got: {}",
+            err
+        );
+
+        let _ = redir_thread.join();
+        let _ = target_thread.join();
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            0,
+            "redirect target must see zero egress"
+        );
     }
 }

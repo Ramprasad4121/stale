@@ -11,7 +11,7 @@
 //! stall. Guard panics are caught and converted to `Block` for the same
 //! reason — one faulty guard must not abort the whole preflight.
 
-use crate::audit::AuditLogger;
+use crate::audit::{scrub_secrets, AuditLogger};
 use crate::types::{Decision, GuardrailResult};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -129,34 +129,43 @@ impl GuardPipeline {
             let guard_start = Instant::now();
             // Spawn per guard: a panicking guard surfaces as JoinError
             // (converted to BLOCK below) instead of aborting preflight.
-            // Timeout bounds hung RPCs.
-            let result =
-                match tokio::time::timeout(self.guard_timeout, tokio::spawn(guard_fn())).await {
-                    Ok(Ok(res)) => res,
-                    Ok(Err(join_err)) => {
-                        if join_err.is_panic() {
-                            GuardrailResult::block(format!(
-                                "guard '{}' panicked — BLOCK (fail closed)",
-                                name
-                            ))
-                        } else {
-                            GuardrailResult::block(format!(
-                                "guard '{}' task failed (cancelled) — BLOCK (fail closed)",
-                                name
-                            ))
-                        }
+            // Timeout bounds hung RPCs. The handle is kept (not moved into
+            // the timeout) so expiry can `abort()` it: an abandoned join
+            // would otherwise keep running detached past the verdict.
+            let mut handle = tokio::spawn(guard_fn());
+            let result = match tokio::time::timeout(self.guard_timeout, &mut handle).await {
+                Ok(Ok(res)) => res,
+                Ok(Err(join_err)) => {
+                    if join_err.is_panic() {
+                        GuardrailResult::block(format!(
+                            "guard '{}' panicked — BLOCK (fail closed)",
+                            name
+                        ))
+                    } else {
+                        GuardrailResult::block(format!(
+                            "guard '{}' task failed (cancelled) — BLOCK (fail closed)",
+                            name
+                        ))
                     }
-                    Err(_) => GuardrailResult::block(format!(
+                }
+                Err(_) => {
+                    handle.abort();
+                    GuardrailResult::block(format!(
                         "guard '{}' timed out after {:?} — BLOCK (fail closed)",
                         name, self.guard_timeout
-                    )),
-                };
+                    ))
+                }
+            };
             let guard_duration = guard_start.elapsed().as_secs_f64() * 1000.0;
 
             reports.push(GuardExecutionReport {
                 name: name.clone(),
                 decision: result.decision,
-                reason: result.reason.clone(),
+                // Scrub here too: `AuditLogger::record` scrubs its own
+                // entry, but anyone serializing this report to logs would
+                // otherwise reintroduce the leak the audit scrub was added
+                // for (see audit::scrub_secrets).
+                reason: scrub_secrets(&result.reason),
                 duration_ms: (guard_duration * 100.0).round() / 100.0,
             });
 
@@ -168,7 +177,7 @@ impl GuardPipeline {
                 blocked = true;
                 if blocked_by.is_none() {
                     blocked_by = Some(name.clone());
-                    block_reason = result.reason;
+                    block_reason = scrub_secrets(&result.reason);
                 }
 
                 if self.mode == PipelineMode::FailFast {
@@ -302,5 +311,35 @@ mod tests {
         assert_eq!(res.decision, Decision::Block);
         assert_eq!(res.blocked_by, Some("panicker".to_string()));
         assert!(res.reason.contains("panicked"));
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_report_reasons_are_secret_scrubbed() {
+        // Fixture assembled at runtime (never a literal) so static secret
+        // scanners don't flag the test itself. Failure messages carry only
+        // the output length, never the scrubbed string.
+        let secret: String = "leak-".to_string() + &"Z".repeat(16);
+        let secret2 = secret.clone();
+        let mut pipeline = create_guard_pipeline(PipelineMode::RunAll, None);
+        pipeline.add("leaky", move || {
+            let secret = secret.clone();
+            async move {
+                GuardrailResult::block(format!("rpc error at https://u:pw@h.io/?apiKey={}", secret))
+            }
+        });
+
+        let res = pipeline.run().await;
+        assert_eq!(res.decision, Decision::Block);
+        assert!(
+            !res.reason.contains(&secret2),
+            "pipeline reason leaked fixture (len {})",
+            res.reason.len()
+        );
+        assert!(
+            !res.results[0].reason.contains(&secret2),
+            "report reason leaked fixture (len {})",
+            res.results[0].reason.len()
+        );
+        assert!(res.results[0].reason.contains("<redacted>"));
     }
 }

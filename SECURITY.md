@@ -65,6 +65,10 @@ via `GuardrailResult::is_allowed()` / `is_blocked()`, not the raw flag.
 - **HTTPS mandatory** except loopback (`localhost`, `127.0.0.0/8`, `::1`),
   matched on the *parsed host* — never by string prefix — so
   `http://localhost.evil.com` is rejected.
+- **Redirects are never followed** (`Policy::none`): any `3xx` response is
+  refused and maps to `BLOCK`. Per-hop re-validation is unnecessary
+  because hops never happen — the SSRF allowlist cannot be bypassed by a
+  307 to a non-allowlisted host.
 - Responses are capped at 1 MiB before JSON parsing (OOM bound against
   malicious endpoints).
 - The configured URL (which may embed an API key) is redacted from every
@@ -123,6 +127,10 @@ via `GuardrailResult::is_allowed()` / `is_blocked()`, not the raw flag.
   hangs and panics into `BLOCK`s attributed to that guard. Max 64 guards.
 - `AuditLogger`: bounded FIFO (`VecDeque`); `Some(0)` capacity coerces to 1.
   Callbacks are panic-isolated but synchronous — keep them non-blocking.
+- Secret scrub (`audit::scrub_secrets`) is ASCII case-insensitive and covers
+  `key=VALUE` forms plus `Bearer`/`Basic` tokens; it is applied both in
+  `AuditLogger::record` and in `GuardPipeline` reports, so neither sink
+  becomes a secret store.
 - `check_mev_rpc`: host-allowlisted private builders, `https` required
   except loopback dev endpoints.
 
