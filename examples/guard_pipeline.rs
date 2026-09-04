@@ -3,6 +3,7 @@
 
 use stale::prelude::*;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -19,8 +20,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let book = AddressBook::new(allowlist, true)?;
 
-    // 3. Setup RateLimiter
-    let mut rate_limiter = RateLimiter::new(10, 60)?;
+    // 3. Setup RateLimiter (shared across guards: each preflight calls
+    // `try_acquire` *inside* the guard so every run consumes a slot.
+    // Never snapshot `check()` outside the pipeline and replay the
+    // verdict — that TOCTOU pattern can never trip the limiter.
+    let rate_limiter = Arc::new(Mutex::new(RateLimiter::new(10, 60)?));
 
     // 4. Build Pipeline
     let mut pipeline = create_guard_pipeline(PipelineMode::FailFast, Some(audit));
@@ -38,11 +42,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         check_mev_rpc("https://rpc.flashbots.net/fast")
     });
 
-    // Guard 3: Rate limit check
-    let rate_check = rate_limiter.check();
+    // Guard 3: Rate limit check (live acquisition — consumes one slot
+    // per pipeline run; atomic check-and-record, never a replayed snapshot)
+    let rl = rate_limiter.clone();
     pipeline.add("rate_limiter", move || {
-        let res = rate_check.clone();
-        async move { res }
+        let rl = rl.clone();
+        async move {
+            rl.lock()
+                .map(|mut limiter| limiter.try_acquire())
+                .unwrap_or_else(|_| {
+                    GuardrailResult::block("rate limiter lock poisoned — BLOCK (fail closed)")
+                })
+        }
     });
 
     // Run the pipeline
