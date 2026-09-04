@@ -19,16 +19,49 @@ pub const DEFAULT_MAX_ENTRIES: usize = 10_000;
 /// metadata can carry RPC URLs with API keys (`https://user:pass@host`,
 /// `?apiKey=secret`, `?token=secret`); the audit trail must never become
 /// a secret store. Non-credential text passes through untouched.
+/// Matching is ASCII case-insensitive (`?SECRET=` is caught); the
+/// `Bearer`/`Basic` authorization-token form (`Authorization: Bearer …`)
+/// is masked when the token is ≥ 8 chars (short prose after a bare
+/// "bearer" word is left alone).
 pub fn scrub_secrets(text: &str) -> String {
     let mut out = text.to_string();
     // userinfo credentials: scheme://user:pass@ → scheme://<redacted>@
     out = mask_userinfo(&out);
     // query/fragment key material: key=VALUE → key=<redacted>
-    for key in ["apiKey", "apikey", "api_key", "token", "secret", "key"] {
+    for key in SCRUB_KEYS {
         out = mask_query_value(&out, key);
+    }
+    // authorization tokens: "Bearer <token>" / "Basic <cred>" → redacted
+    for scheme in ["bearer ", "basic "] {
+        out = mask_auth_token(&out, scheme);
     }
     out
 }
+
+/// Query/fragment keys whose `key=VALUE` form is redacted (compared
+/// ASCII case-insensitively).
+pub const SCRUB_KEYS: &[&str] = &[
+    "apikey",
+    "api_key",
+    "api-key",
+    "token",
+    "secret",
+    "key",
+    "password",
+    "passwd",
+    "pwd",
+    "private_key",
+    "privatekey",
+    "mnemonic",
+    "seed",
+    "bearer",
+    "auth",
+    "authorization",
+    "access_token",
+    "refresh_token",
+    "client_secret",
+    "api_secret",
+];
 
 fn mask_userinfo(s: &str) -> String {
     let mut result = s.to_string();
@@ -52,21 +85,51 @@ fn mask_userinfo(s: &str) -> String {
     result
 }
 
+/// ASCII case-insensitive substring search returning the byte offset of
+/// the match at or after `from`. Byte indices stay valid because both the
+/// match and all index arithmetic are ASCII-only (a match can only start
+/// on an ASCII byte, hence on a char boundary).
+fn find_key_at(haystack: &str, needle: &str, from: usize) -> Option<usize> {
+    let n = needle.as_bytes();
+    haystack.as_bytes()[from..]
+        .windows(n.len())
+        .position(|w| w.eq_ignore_ascii_case(n))
+        .map(|p| from + p)
+}
+
 fn mask_query_value(s: &str, key: &str) -> String {
+    let needle = format!("{}=", key);
     let mut result = s.to_string();
     let mut search_from = 0;
-    loop {
-        let needle = format!("{}=", key);
-        let key_pos = match result[search_from..].find(&needle) {
-            Some(p) => search_from + p,
-            None => break,
-        };
+    while let Some(key_pos) = find_key_at(&result, &needle, search_from) {
         let val_start = key_pos + needle.len();
         let val_end = result[val_start..]
             .find(|c: char| c.is_whitespace() || matches!(c, '&' | '"' | '\'' | ',' | ')'))
             .map(|p| val_start + p)
             .unwrap_or(result.len());
         if val_end > val_start {
+            result.replace_range(val_start..val_end, "<redacted>");
+            search_from = val_start + "<redacted>".len();
+        } else {
+            search_from = val_end;
+        }
+    }
+    result
+}
+
+/// Redact the credential after a `scheme` prefix (`"bearer "` /
+/// `"basic "`, case-insensitive) when it is token-shaped (≥ 8 non-delimiter
+/// chars). Short words are left alone to avoid mangling prose.
+fn mask_auth_token(s: &str, scheme: &str) -> String {
+    let mut result = s.to_string();
+    let mut search_from = 0;
+    while let Some(scheme_pos) = find_key_at(&result, scheme, search_from) {
+        let val_start = scheme_pos + scheme.len();
+        let val_end = result[val_start..]
+            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ',' | ')' | ';'))
+            .map(|p| val_start + p)
+            .unwrap_or(result.len());
+        if val_end - val_start >= 8 {
             result.replace_range(val_start..val_end, "<redacted>");
             search_from = val_start + "<redacted>".len();
         } else {
@@ -260,5 +323,52 @@ mod tests {
             scrub_secrets("fresh: age 10s <= maxAge 60s — ALLOW"),
             "fresh: age 10s <= maxAge 60s — ALLOW"
         );
+    }
+
+    /// Build a synthetic secret at runtime (never a literal) so static
+    /// secret scanners don't flag the fixture itself. Tests below prove
+    /// the scrubber removes these values anyway.
+    fn synthetic_secret(tag: &str) -> String {
+        format!("{}-{}-fixture-secret", tag, "0123456789abcdef")
+    }
+
+    #[test]
+    fn test_scrub_case_insensitive_credential_forms() {
+        let s1 = synthetic_secret("alpha");
+        let s2 = synthetic_secret("beta");
+        let s3 = synthetic_secret("gamma");
+        let out = scrub_secrets(&format!(
+            "failed at ?SECRET={}&APIKEY={}&Password={}",
+            s1, s2, s3
+        ));
+        // Failure messages carry the output length only — never echo the
+        // scrubbed string into test output (CodeQL-clean by construction).
+        assert!(!out.contains(&s1), "SECRET leaked (len {})", out.len());
+        assert!(!out.contains(&s2), "APIKEY leaked (len {})", out.len());
+        assert!(!out.contains(&s3), "Password leaked (len {})", out.len());
+        assert!(out.contains("SECRET=<redacted>"));
+    }
+
+    #[test]
+    fn test_scrub_bearer_token_and_leaves_prose_alone() {
+        let tok = synthetic_secret("bearer-token");
+        let out = scrub_secrets(&format!("rpc error; Authorization: Bearer {}", tok));
+        assert!(
+            !out.contains(&tok),
+            "bearer token leaked (len {})",
+            out.len()
+        );
+        // Short words after a bare "bearer" are prose, not tokens.
+        let prose = scrub_secrets("the bearer of bad news arrived late");
+        assert_eq!(prose, "the bearer of bad news arrived late");
+    }
+
+    #[test]
+    fn test_scrub_private_key_and_mnemonic_forms() {
+        let k = synthetic_secret("privkey");
+        let m = synthetic_secret("mnemonic");
+        let out = scrub_secrets(&format!("leak ?private_key={}&mnemonic={}", k, m));
+        assert!(!out.contains(&k), "private_key leaked (len {})", out.len());
+        assert!(!out.contains(&m), "mnemonic leaked (len {})", out.len());
     }
 }
