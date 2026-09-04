@@ -33,16 +33,28 @@ pub struct RateLimiter {
     max_tx: usize,
     window: Duration,
     timestamps: Vec<Instant>,
+    /// Set when flood eviction drops history. While set, `check` BLOCKs:
+    /// evicted (possibly unexpired) entries would otherwise read as
+    /// headroom (fail-open). Cleared once the window fully drains.
+    evicted: bool,
 }
 
 impl RateLimiter {
     /// Create a limiter allowing `max_tx` transactions per `window_seconds`.
     ///
     /// # Errors
-    /// `Err` if `max_tx == 0` or `window_seconds == 0`.
+    /// `Err` if `max_tx == 0` or `window_seconds == 0`. `Err` if `max_tx`
+    /// exceeds [`MAX_HISTORY`]: the retained history could never reach the
+    /// policy, so the limiter would ALLOW forever under flood.
     pub fn new(max_tx: usize, window_seconds: u64) -> Result<Self, String> {
         if max_tx == 0 {
             return Err("max_tx must be greater than 0".to_string());
+        }
+        if max_tx > MAX_HISTORY {
+            return Err(format!(
+                "max_tx {} exceeds history bound {} — policy unenforceable — BLOCK (fail closed)",
+                max_tx, MAX_HISTORY
+            ));
         }
         if window_seconds == 0 {
             return Err("window_seconds must be greater than 0".to_string());
@@ -52,6 +64,7 @@ impl RateLimiter {
             max_tx,
             window: Duration::from_secs(window_seconds),
             timestamps: Vec::new(),
+            evicted: false,
         })
     }
 
@@ -63,6 +76,13 @@ impl RateLimiter {
         let now = Instant::now();
         let window = self.window;
         self.timestamps.retain(|&t| now.duration_since(t) < window);
+        if self.timestamps.is_empty() {
+            self.evicted = false;
+        } else if self.evicted {
+            return GuardrailResult::block(
+                "rate history evicted under flood; headroom unverifiable — BLOCK (fail closed)",
+            );
+        }
 
         if self.timestamps.len() >= self.max_tx {
             GuardrailResult::block(format!(
@@ -88,6 +108,7 @@ impl RateLimiter {
         if self.timestamps.len() > MAX_HISTORY {
             let excess = self.timestamps.len() - MAX_HISTORY;
             self.timestamps.drain(..excess);
+            self.evicted = true;
         }
     }
 
@@ -116,6 +137,8 @@ pub struct SpendingCap {
     max_spend: u128,
     window: Duration,
     ledger: Vec<(Instant, u128)>,
+    /// Same flood-eviction semantics as [`RateLimiter::evicted`].
+    evicted: bool,
 }
 
 impl SpendingCap {
@@ -135,6 +158,7 @@ impl SpendingCap {
             max_spend,
             window: Duration::from_secs(window_seconds),
             ledger: Vec::new(),
+            evicted: false,
         })
     }
 
@@ -145,6 +169,13 @@ impl SpendingCap {
         let now = Instant::now();
         let window = self.window;
         self.ledger.retain(|&(t, _)| now.duration_since(t) < window);
+        if self.ledger.is_empty() {
+            self.evicted = false;
+        } else if self.evicted {
+            return GuardrailResult::block(
+                "spend history evicted under flood; spend unverifiable — BLOCK (fail closed)",
+            );
+        }
 
         let current_spend: u128 = self
             .ledger
@@ -175,6 +206,7 @@ impl SpendingCap {
         if self.ledger.len() > MAX_HISTORY {
             let excess = self.ledger.len() - MAX_HISTORY;
             self.ledger.drain(..excess);
+            self.evicted = true;
         }
     }
 
@@ -241,5 +273,28 @@ mod tests {
         assert!(cap.try_spend(600).allow_execute);
         assert!(!cap.try_spend(500).allow_execute);
         assert!(cap.try_spend(400).allow_execute);
+    }
+
+    #[test]
+    fn test_oversized_policy_rejected_at_construction() {
+        // A policy the history can never reach would ALLOW forever.
+        assert!(RateLimiter::new(MAX_HISTORY + 1, 60).is_err());
+        assert!(RateLimiter::new(MAX_HISTORY, 60).is_ok());
+    }
+
+    #[test]
+    fn test_flood_eviction_blocks_fail_closed() {
+        let mut limiter = RateLimiter::new(10, 60).unwrap();
+        for _ in 0..(MAX_HISTORY + 5) {
+            limiter.record();
+        }
+        // History was evicted: headroom unverifiable → BLOCK.
+        assert!(!limiter.check().allow_execute);
+
+        let mut cap = SpendingCap::new(u128::MAX, 60).unwrap();
+        for _ in 0..(MAX_HISTORY + 5) {
+            cap.record(1);
+        }
+        assert!(!cap.check(0).allow_execute);
     }
 }

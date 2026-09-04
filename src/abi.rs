@@ -122,11 +122,20 @@ pub fn decode_word_i128(hex_str: &str, offset_words: usize) -> Result<i128, Stri
     }
 }
 
-/// Decode a `bool` word: `0` → false, any nonzero → true (fail-closed
-/// direction for `paused`/`sanctioned` consumers).
+/// Decode a `bool` word: strictly `0` → false, `1` → true. Any other
+/// value is malformed → `Err` (fail closed for every consumer: a `2`
+/// must never read as `true` for transfer-simulation, nor slip past
+/// `paused`/`sanctioned` checks as an enforcing signal).
 pub fn decode_bool(hex_str: &str) -> Result<bool, String> {
     let word = decode_word_u128(hex_str, 0)?;
-    Ok(word != 0)
+    match word {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(format!(
+            "invalid bool word {} (expected 0 or 1) — BLOCK",
+            word
+        )),
+    }
 }
 
 /// Decode Chainlink `latestRoundData()` →
@@ -219,5 +228,14 @@ mod tests {
         // overflow-checks (fail closed at decode time).
         assert!(decode_word_u128(&word, usize::MAX).is_err());
         assert!(decode_word_i128(&word, usize::MAX).is_err());
+    }
+
+    #[test]
+    fn test_decode_bool_strict_0_1_only() {
+        assert!(!decode_bool(&format!("0x{:0>64x}", 0u64)).unwrap());
+        assert!(decode_bool(&format!("0x{:0>64x}", 1u64)).unwrap());
+        // Any nonzero beyond 1 is malformed — never `true`.
+        assert!(decode_bool(&format!("0x{:0>64x}", 2u64)).is_err());
+        assert!(decode_bool(&format!("0x{:0>64x}", u128::MAX)).is_err());
     }
 }

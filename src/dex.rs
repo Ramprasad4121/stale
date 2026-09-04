@@ -26,6 +26,11 @@ pub async fn check_pool_v2(
     if !is_valid_eth_address(pool) {
         return GuardrailResult::block(format!("invalid pool address {} — BLOCK", pool));
     }
+    if min_reserve0 == 0 || min_reserve1 == 0 {
+        return GuardrailResult::block(
+            "vacuous V2 minimum (0): an empty pool would ALLOW — BLOCK (fail closed)",
+        );
+    }
 
     let hex_data = match client.call(pool, V2_GET_RESERVES_SELECTOR).await {
         Ok(h) => h,
@@ -100,6 +105,11 @@ pub async fn check_pool_v3(
 ) -> GuardrailResult {
     if !is_valid_eth_address(pool) {
         return GuardrailResult::block(format!("invalid pool address {} — BLOCK", pool));
+    }
+    if min_liquidity == 0 {
+        return GuardrailResult::block(
+            "vacuous V3 minimum (0): zero liquidity would ALLOW — BLOCK (fail closed)",
+        );
     }
 
     let hex_data = match client.call(pool, V3_LIQUIDITY_SELECTOR).await {
@@ -201,5 +211,32 @@ mod tests {
         )
         .await;
         assert!(res.allow_execute);
+    }
+
+    #[tokio::test]
+    async fn test_pool_v2_zero_minimum_blocked() {
+        // A zero minimum would ALLOW an empty pool — vacuous policy BLOCKs.
+        let reserves_hex = format!("0x{:0>64x}{:0>64x}{:0>64x}", 0u64, 0u64, 1u64);
+        let mock = MockRpcClient {
+            call_handler: Some(Arc::new(move |_, _| Ok(reserves_hex.clone()))),
+            ..Default::default()
+        };
+
+        let res = check_pool_v2(&mock, "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc", 0, 0).await;
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("vacuous"));
+    }
+
+    #[tokio::test]
+    async fn test_pool_v3_zero_minimum_blocked() {
+        let liquidity_hex = format!("0x{:0>64x}", 0u64);
+        let mock = MockRpcClient {
+            call_handler: Some(Arc::new(move |_, _| Ok(liquidity_hex.clone()))),
+            ..Default::default()
+        };
+
+        let res = check_pool_v3(&mock, "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640", 0).await;
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("vacuous"));
     }
 }

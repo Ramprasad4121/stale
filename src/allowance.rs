@@ -33,6 +33,12 @@ pub fn check_approval(token: &str, spender: &str, amount: u128) -> GuardrailResu
         return GuardrailResult::block(format!("invalid spender address {} — BLOCK", spender));
     }
 
+    if amount == 0 {
+        return GuardrailResult::block(
+            "vacuous approval (0): a no-op approval tx still costs gas and can be front-run — BLOCK (fail closed)",
+        );
+    }
+
     if amount == MAX_U128 {
         return GuardrailResult::block(format!(
             "infinite approval to spender {} is strictly forbidden — BLOCK",
@@ -143,6 +149,17 @@ mod tests {
         // Doc promises `>= 2^126` BLOCKs: the exact boundary must not ALLOW.
         assert!(!check_approval(token, spender, DANGEROUSLY_LARGE_U128).allow_execute);
         assert!(check_approval(token, spender, DANGEROUSLY_LARGE_U128 - 1).allow_execute);
+    }
+
+    #[test]
+    fn test_zero_approval_blocked() {
+        let res = check_approval(
+            "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+            0,
+        );
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("vacuous"));
     }
 
     #[tokio::test]
