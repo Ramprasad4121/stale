@@ -1,8 +1,33 @@
 # stale Changelog
 
-> **Release note:** `Unreleased` contains breaking API changes (`encode_address_param` → `Result`, `check_sanctioned` chain gate, `check_balance` gas reserve, `SimulateTxInput.value`, `PipelineResult.guards_skipped`). The next release MUST bump major (or at minimum minor with migration notes) per semver — do not ship these as a patch.
+## 2.0.0 — 2026-09-04
+
+Major release: the post-audit, certification-hardened guardrail suite. Every section below shipped behind green CI (tests, clippy `-D warnings`, fmt, docs, CodeQL, review bot) plus red/blue/docs-team adversarial review and live-mainnet validation.
+
+### Migrating from 1.x
+
+Signature changes (compiler guides you — fix every call site):
+
+- `encode_address_param(addr) -> String` is now `-> Result<String, String>`. Map `Err` to `BLOCK`; never `unwrap`.
+- `check_sanctioned(client, address)` is now `check_sanctioned(client, chain_id: u64, address)`. Pass `1` for mainnet; any other chain `BLOCK`s.
+- `check_balance(client, agent, token, required)` is now `check_balance(client, agent, token, required, gas_reserve_wei: u128)`. Pass `0` for legacy exact-solvency semantics.
+- `SimulateTxInput { account, to, data }` gains `value: Option<u128>`. Pass `None` for legacy 0-value simulation; set `Some(wei)` for payable flows.
+- `PipelineResult` gains `guards_skipped: Vec<String>` (omitted from JSON when empty). Additive — no call-site change needed.
+- `EvmRpcClient` gains `get_base_fee`, `get_priority_fee`, `call_from_with_value` with fail-closed `Err` defaults. External transports compile unchanged; implement the methods to opt into 1559/value simulation.
+
+Behavioral tightenings (no signature change — audit your policies):
+
+- `check_paused`: ANY revert now `BLOCK`s (was: revert → `ALLOW`).
+- `decode_bool` accepts only `0`/`1`; any other word is `Err` → `BLOCK`.
+- `slippage_bps == 10000`, `check_approval(0)`, zero pool minimums, and required-0-plus-reserve-0 solvency checks now `BLOCK` as vacuous.
+- `RateLimiter::new` rejects `max_tx > 100_000`; flood-evicted histories `BLOCK` until the window drains.
+- Deviation threshold must satisfy `0 < max ≤ 100`; the verdict is exact integer math (`f64` display-only).
+- `stale is-stale` exits `1` on `BLOCK`; negative `--max-age` exits `2`.
+- `stale-mcp` requires explicit `decimals`/`nowSeconds`/`maxAgeSeconds`; every rejection is JSON with `isError: true`.
 
 ## Unreleased
+
+(nothing — cut 2.0.0 above; add new entries here.)
 
 ### Breaking Changes
 
@@ -33,7 +58,7 @@
 
 - PR #41: `is_stale`/`deadline` overflow → BLOCK; `updatedAt > i64::MAX` → BLOCK; negative `now` → BLOCK; decimals validity cap; sequencer unexpected-answer/incomplete-round → BLOCK; `pausable` malformed-response and RPC-error misclassification → BLOCK; slippage checked math; deviation self-comparison/stale-round → BLOCK; RPC 10s timeout, HTTPS-only (except localhost), URL redaction; `decode_round_data` exact-length check.
 - PR #43: RPC parsed-host validation, 1 MiB response cap; pipeline per-guard timeout + panic isolation + `MAX_GUARDS`; atomic rate-limiter acquisition + history cap; audit FIFO; nonce exact-equality; `check_prices` bounded at 64; release/dev `overflow-checks=true`.
-- This PR: honeypot `false`-return → BLOCK (fee-on-transfer); sanctions chain gate; audit-log secret scrub; zero `unwrap()` in binaries.
+- PR #44: honeypot `false`-return → BLOCK (fee-on-transfer); sanctions chain gate; audit-log secret scrub; zero `unwrap()` in binaries.
 
 ### New Guards
 
@@ -41,7 +66,7 @@
 
 ### Docs Drift Fixes
 
-- README dependency pin `1.0.0` → `1.0.2`; registry scope corrected (15 feeds / 9 chains); `check_price_deviation` library-only gap documented; `check_is_contract` proxy caveat; CLI exit-code contract (`0` ALLOW / `1` BLOCK / `2` usage) documented; CRE pointer added. CLI `--help` descriptions filled; legacy top-level path plumbs `--allowed-rpc-hosts`; usage errors exit `2`. `FeedEntry` serializes camelCase (`chainId`). Live example uses 3600s max-age; pool/solvency/gas checks warn (not asserts) on flaky live state, while identity/compliance checks (feed, sanctions, EOA, contract, pause, sequencer) keep hard asserts — the canary depends on them to alert. `cre/README` paths point at the Rust sources; `cre` package versions aligned to `1.0.2`.
+- README dependency pin `1.0.2` → `2.0.0`; registry scope corrected (15 feeds / 9 chains); `check_price_deviation` library-only gap documented; `check_is_contract` proxy caveat; CLI exit-code contract (`0` ALLOW / `1` BLOCK / `2` usage) documented; CRE pointer added. CLI `--help` descriptions filled; legacy top-level path plumbs `--allowed-rpc-hosts`; usage errors exit `2`. `FeedEntry` serializes camelCase (`chainId`). Live example uses 3600s max-age; pool/solvency/gas checks warn (not asserts) on flaky live state, while identity/compliance checks (feed, sanctions, EOA, contract, pause, sequencer) keep hard asserts — the canary depends on them to alert. `cre/README` paths point at the Rust sources; `cre` package versions aligned to `2.0.0`.
 
 ## 1.0.2
 
