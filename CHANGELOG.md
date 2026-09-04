@@ -19,6 +19,8 @@
 
 ### Security Fixes
 
+- Examples + integration test taught the check-snapshot anti-pattern (#52): `examples/guard_pipeline.rs` and `tests/integration_pipeline.rs` snapshotted `RateLimiter::check()` / `SpendingCap::check()` once and replayed the verdict, so the governors could never trip. Guards now call `try_acquire` / `try_spend` live inside `Arc<Mutex<…>>`; the integration test proves it by tripping the 5 ETH cap on the 6th preflight.
+
 - PR #41: `is_stale`/`deadline` overflow → BLOCK; `updatedAt > i64::MAX` → BLOCK; negative `now` → BLOCK; decimals validity cap; sequencer unexpected-answer/incomplete-round → BLOCK; `pausable` malformed-response and RPC-error misclassification → BLOCK; slippage checked math; deviation self-comparison/stale-round → BLOCK; RPC 10s timeout, HTTPS-only (except localhost), URL redaction; `decode_round_data` exact-length check.
 - PR #43: RPC parsed-host validation, 1 MiB response cap; pipeline per-guard timeout + panic isolation + `MAX_GUARDS`; atomic rate-limiter acquisition + history cap; audit FIFO; nonce exact-equality; `check_prices` bounded at 64; release/dev `overflow-checks=true`.
 - This PR: honeypot `false`-return → BLOCK (fee-on-transfer); sanctions chain gate; audit-log secret scrub; zero `unwrap()` in binaries.
