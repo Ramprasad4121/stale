@@ -51,8 +51,14 @@ pub fn decode_word_u128(hex_str: &str, offset_words: usize) -> Result<u128, Stri
     if !clean.is_ascii() {
         return Err("hex response contains non-ASCII characters".to_string());
     }
-    let start = offset_words * 64;
-    let end = start + 64;
+    // Checked offset math: a huge `offset_words` must yield Err, never a
+    // debug-build arithmetic panic under `overflow-checks = true`.
+    let start = offset_words
+        .checked_mul(64)
+        .ok_or_else(|| format!("word offset {} overflows — BLOCK", offset_words))?;
+    let end = start
+        .checked_add(64)
+        .ok_or_else(|| format!("word offset {} overflows — BLOCK", offset_words))?;
     let slice = clean
         .get(start..end)
         .ok_or_else(|| format!("hex response too short for word {}", offset_words))?;
@@ -72,8 +78,12 @@ pub fn decode_word_i128(hex_str: &str, offset_words: usize) -> Result<i128, Stri
     if !clean.is_ascii() {
         return Err("hex response contains non-ASCII characters".to_string());
     }
-    let start = offset_words * 64;
-    let end = start + 64;
+    let start = offset_words
+        .checked_mul(64)
+        .ok_or_else(|| format!("word offset {} overflows — BLOCK", offset_words))?;
+    let end = start
+        .checked_add(64)
+        .ok_or_else(|| format!("word offset {} overflows — BLOCK", offset_words))?;
     let slice = clean
         .get(start..end)
         .ok_or_else(|| format!("hex response too short for word {}", offset_words))?;
@@ -200,5 +210,14 @@ mod tests {
         // Negative value < -2^127
         overflow_hex = "8".repeat(32) + &"0".repeat(32);
         assert!(decode_word_i128(&overflow_hex, 0).is_err());
+    }
+
+    #[test]
+    fn test_decode_huge_offset_errors_instead_of_panicking() {
+        let word = format!("0x{:0>64x}", 1u64);
+        // offset*64 overflows usize: must be Err, never a panic under
+        // overflow-checks (fail closed at decode time).
+        assert!(decode_word_u128(&word, usize::MAX).is_err());
+        assert!(decode_word_i128(&word, usize::MAX).is_err());
     }
 }

@@ -24,7 +24,9 @@ impl AddressBook {
             if !is_valid_eth_address(&addr) {
                 return Err(format!("invalid address for \"{}\": {}", label, addr));
             }
-            addresses.insert(addr.to_lowercase(), label);
+            // Store trimmed: validation trims, so an untrimmed insert would
+            // validate yet never match (perpetual BLOCK for a listed entry).
+            addresses.insert(addr.trim().to_lowercase(), label);
         }
         Ok(Self { addresses, strict })
     }
@@ -42,7 +44,7 @@ impl AddressBook {
             return GuardrailResult::block(format!("invalid address {} — BLOCK", address));
         }
 
-        let normalized = address.to_lowercase();
+        let normalized = address.trim().to_lowercase();
         if let Some(label) = self.addresses.get(&normalized) {
             GuardrailResult::allow(format!("address is allowlisted as \"{}\"", label))
         } else if self.strict {
@@ -55,14 +57,14 @@ impl AddressBook {
         }
     }
 
-    /// Membership test (case-insensitive).
+    /// Membership test (case-insensitive, whitespace-tolerant).
     pub fn has(&self, address: &str) -> bool {
-        self.addresses.contains_key(&address.to_lowercase())
+        self.addresses.contains_key(&address.trim().to_lowercase())
     }
 
     /// Label for an allowlisted address, if present.
     pub fn label_of(&self, address: &str) -> Option<&String> {
-        self.addresses.get(&address.to_lowercase())
+        self.addresses.get(&address.trim().to_lowercase())
     }
 
     /// Number of allowlisted entries.
@@ -126,5 +128,21 @@ mod tests {
 
         let res = book.check("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
         assert!(!res.allow_execute);
+    }
+
+    #[test]
+    fn test_whitespace_padded_entry_matches() {
+        let mut map = HashMap::new();
+        map.insert(
+            "USDC".to_string(),
+            "  0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48  ".to_string(),
+        );
+        let book = AddressBook::new_strict(map).unwrap();
+
+        // Validates (trims) AND matches (stored trimmed): no perpetual
+        // BLOCK for a listed address.
+        let res = book.check("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
+        assert!(res.allow_execute);
+        assert!(book.has("  0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48  "));
     }
 }

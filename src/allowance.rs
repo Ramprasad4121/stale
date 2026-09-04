@@ -40,7 +40,7 @@ pub fn check_approval(token: &str, spender: &str, amount: u128) -> GuardrailResu
         ));
     }
 
-    if amount > DANGEROUSLY_LARGE_U128 {
+    if amount >= DANGEROUSLY_LARGE_U128 {
         return GuardrailResult::block(format!(
             "dangerously large approval to spender {} — BLOCK",
             spender
@@ -134,6 +134,15 @@ mod tests {
         );
         assert!(!res.allow_execute);
         assert!(res.reason.contains("infinite approval"));
+    }
+
+    #[test]
+    fn test_dangerous_boundary_is_inclusive() {
+        let token = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+        let spender = "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45";
+        // Doc promises `>= 2^126` BLOCKs: the exact boundary must not ALLOW.
+        assert!(!check_approval(token, spender, DANGEROUSLY_LARGE_U128).allow_execute);
+        assert!(check_approval(token, spender, DANGEROUSLY_LARGE_U128 - 1).allow_execute);
     }
 
     #[tokio::test]

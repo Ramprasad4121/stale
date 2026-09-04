@@ -4,6 +4,13 @@
 //! `call_from` falls back to `call_handler` when no `call_from_handler` is
 //! set, silently ignoring `from`. Tests for `from`-dependent guards
 //! (honeypot, simulation) MUST set an explicit `call_from_handler`.
+//!
+//! # Address blindness
+//! `get_code`, `get_balance`, and `get_transaction_count` return their
+//! single canned value for ANY address argument. Per-address behavior
+//! (e.g. "EOA here, contract there") cannot be expressed — route through
+//! `call_handler`/`call_from_handler` when the guard under test reads
+//! via `call`/`call_from`, or use two mock instances.
 
 use crate::rpc::EvmRpcClient;
 use async_trait::async_trait;

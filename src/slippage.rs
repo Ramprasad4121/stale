@@ -9,9 +9,11 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Max supported decimal exponent diff. `10^38` already exceeds `u128::MAX`
-/// (`≈3.4e38`), so anything above 38 cannot scale without overflow — the
-/// `checked_pow` below enforces this; the constant documents intent.
+/// Max supported decimal exponent diff. `u128::MAX` is ≈3.4e38, so
+/// `10^38` itself still fits — but intermediate scaling multiplies before
+/// dividing, and anything above 38 cannot survive that path without
+/// overflow. The `checked_pow` below enforces this; the constant documents
+/// intent (conservative headroom, not the exact `u128` ceiling).
 pub const MAX_EXP_DIFF: u32 = 38;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
