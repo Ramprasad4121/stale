@@ -15,6 +15,12 @@ pub const ZKSYNC_CHAIN_ID: u64 = 324;
 pub const METIS_CHAIN_ID: u64 = 1088;
 pub const MANTLE_CHAIN_ID: u64 = 5000;
 pub const SCROLL_CHAIN_ID: u64 = 534352;
+/// Sequenced L2s with NO uptime feed configured yet (addresses not
+/// allowlisted — never invent feed addresses). Used to fail loud instead
+/// of silently passing on chains with centralized sequencers.
+pub const BLAST_CHAIN_ID: u64 = 81457;
+pub const LINEA_CHAIN_ID: u64 = 59144;
+pub const ARBITRUM_NOVA_CHAIN_ID: u64 = 42170;
 
 pub const DEFAULT_FEED: &str = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
 pub const BTC_USD_FEED: &str = "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c";
@@ -119,6 +125,16 @@ pub fn get_sequencer_feed(chain_id: u64) -> Option<&'static str> {
         SCROLL_CHAIN_ID => Some("0x45c2b8C204568A03Dc7A2E32B71D67Fe97F908A9"),
         _ => None,
     }
+}
+
+/// True for sequenced L2s known to lack a configured uptime feed
+/// (see `BLAST_CHAIN_ID` et al). Callers must NOT treat these as
+/// "no sequencer" — the sequencer exists, `stale` just cannot verify it.
+pub fn is_unconfigured_sequenced_l2(chain_id: u64) -> bool {
+    matches!(
+        chain_id,
+        BLAST_CHAIN_ID | LINEA_CHAIN_ID | ARBITRUM_NOVA_CHAIN_ID
+    )
 }
 
 /// Case-insensitive registry lookup. `None` → caller emits BLOCK

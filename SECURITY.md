@@ -56,6 +56,9 @@ via `GuardrailResult::is_allowed()` / `is_blocked()`, not the raw flag.
   `answer == 0` (up) **and** age past `GRACE_PERIOD_SECONDS` (3600s) since
   `startedAt`. Down, unknown status, incomplete round, missing data, future
   `startedAt`, and grace-period restarts all → `BLOCK`.
+- Sequenced L2s with NO configured feed (Blast, Linea, Arbitrum Nova)
+  BLOCK loudly (`is_unconfigured_sequenced_l2`) — never a silent pass.
+  Chains without a centralized sequencer (mainnet, Polygon PoS) skip.
 - Transport / decode failure → `BLOCK` (fail closed).
 
 ## RPC assumptions
