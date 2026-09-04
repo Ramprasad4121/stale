@@ -98,15 +98,61 @@ fn find_key_at(haystack: &str, needle: &str, from: usize) -> Option<usize> {
 }
 
 fn mask_query_value(s: &str, key: &str) -> String {
-    let needle = format!("{}=", key);
     let mut result = s.to_string();
     let mut search_from = 0;
-    while let Some(key_pos) = find_key_at(&result, &needle, search_from) {
-        let val_start = key_pos + needle.len();
+    while let Some(key_pos) = find_key_at(&result, key, search_from) {
+        let bytes_len = result.len();
+        let mut p = key_pos + key.len();
+        // Skip a closing quote of a quoted key (`"apiKey"`).
+        if result.as_bytes().get(p) == Some(&b'"') || result.as_bytes().get(p) == Some(&b'\'') {
+            p += 1;
+        }
+        while result
+            .as_bytes()
+            .get(p)
+            .is_some_and(|b| b.is_ascii_whitespace())
+        {
+            p += 1;
+        }
+        // Require `=` (URL/form) or `:` (JSON). Anything else is prose
+        // ("token expired") — advance past the key.
+        let sep = result.as_bytes().get(p).copied();
+        if sep != Some(b'=') && sep != Some(b':') {
+            search_from = key_pos + key.len();
+            continue;
+        }
+        let is_json = sep == Some(b':');
+        p += 1;
+        while result
+            .as_bytes()
+            .get(p)
+            .is_some_and(|b| b.is_ascii_whitespace())
+        {
+            p += 1;
+        }
+        if is_json {
+            // JSON values are quoted: `"key": "value"`. An unquoted
+            // `key: word` is prose ("token: the subway") — leave it.
+            if result.as_bytes().get(p) != Some(&b'"') && result.as_bytes().get(p) != Some(&b'\'') {
+                search_from = key_pos + key.len();
+                continue;
+            }
+            p += 1;
+        } else if result.as_bytes().get(p) == Some(&b'"')
+            || result.as_bytes().get(p) == Some(&b'\'')
+        {
+            p += 1;
+        }
+        if p > bytes_len {
+            break;
+        }
+        let val_start = p;
         let val_end = result[val_start..]
-            .find(|c: char| c.is_whitespace() || matches!(c, '&' | '"' | '\'' | ',' | ')'))
-            .map(|p| val_start + p)
-            .unwrap_or(result.len());
+            .find(|c: char| {
+                c.is_whitespace() || matches!(c, '&' | '"' | '\'' | ',' | ')' | '}' | ';')
+            })
+            .map(|q| val_start + q)
+            .unwrap_or(bytes_len);
         if val_end > val_start {
             result.replace_range(val_start..val_end, "<redacted>");
             search_from = val_start + "<redacted>".len();
@@ -370,5 +416,22 @@ mod tests {
         let out = scrub_secrets(&format!("leak ?private_key={}&mnemonic={}", k, m));
         assert!(!out.contains(&k), "private_key leaked (len {})", out.len());
         assert!(!out.contains(&m), "mnemonic leaked (len {})", out.len());
+    }
+
+    #[test]
+    fn test_scrub_json_colon_forms() {
+        // RPC echoes often arrive as JSON: {"apiKey": "SECRET"}.
+        let body = "{\"apiKey\": \"ABC123XYZ\", \"token\":\"T0K3N-Value_9\"}";
+        let out = scrub_secrets(body);
+        assert!(!out.contains("ABC123XYZ"), "json apiKey leaked: {}", out);
+        assert!(!out.contains("T0K3N-Value_9"), "json token leaked: {}", out);
+        assert!(out.contains("<redacted>"));
+    }
+
+    #[test]
+    fn test_scrub_leaves_unquoted_colon_prose_alone() {
+        // `key: word` without quotes is prose, not a credential.
+        let prose = "note token: the subway takes tokens on weekends";
+        assert_eq!(scrub_secrets(prose), prose);
     }
 }

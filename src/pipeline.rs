@@ -118,6 +118,24 @@ impl GuardPipeline {
     /// `Block` attributed to that guard instead of stalling or aborting
     /// the preflight.
     pub async fn run(&mut self) -> PipelineResult {
+        // `tokio::spawn` below panics outside a Tokio runtime — and that
+        // panic would occur in `run()` itself, outside the per-guard
+        // isolation. Detect it first and fail closed instead.
+        if tokio::runtime::Handle::try_current().is_err() {
+            let skipped = self.guards.iter().map(|(n, _)| n.clone()).collect();
+            return PipelineResult {
+                decision: Decision::Block,
+                reason: "no Tokio runtime: guards cannot be spawned — BLOCK (fail closed)"
+                    .to_string(),
+                guards_run: 0,
+                guards_passed: 0,
+                blocked_by: Some("runtime".to_string()),
+                duration_ms: 0.0,
+                results: Vec::new(),
+                guards_skipped: skipped,
+            };
+        }
+
         let start = Instant::now();
         let mut reports = Vec::new();
         let mut blocked = false;
@@ -341,5 +359,36 @@ mod tests {
             res.results[0].reason.len()
         );
         assert!(res.results[0].reason.contains("<redacted>"));
+    }
+
+    #[test]
+    fn test_run_without_runtime_blocks_instead_of_panicking() {
+        // Drive the future with a noop waker and NO Tokio runtime.
+        // `tokio::spawn` inside `run()` would panic here; the runtime
+        // probe must convert that into BLOCK first.
+        fn noop_waker() -> std::task::Waker {
+            use std::task::{RawWaker, RawWakerVTable, Waker};
+            unsafe fn clone(p: *const ()) -> RawWaker {
+                RawWaker::new(p, &VTABLE)
+            }
+            unsafe fn noop(_: *const ()) {}
+            const VTABLE: RawWakerVTable = RawWakerVTable::new(clone, noop, noop, noop);
+            unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) }
+        }
+
+        let mut pipeline = create_guard_pipeline(PipelineMode::FailFast, None);
+        pipeline.add("guard1", || async { GuardrailResult::allow("ok") });
+
+        let mut fut = Box::pin(pipeline.run());
+        let waker = noop_waker();
+        let mut cx = std::task::Context::from_waker(&waker);
+        match fut.as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(res) => {
+                assert_eq!(res.decision, Decision::Block);
+                assert!(res.reason.contains("no Tokio runtime"));
+                assert_eq!(res.guards_skipped, vec!["guard1".to_string()]);
+            }
+            std::task::Poll::Pending => panic!("run() without runtime must resolve immediately"),
+        }
     }
 }

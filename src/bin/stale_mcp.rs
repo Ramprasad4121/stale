@@ -2,9 +2,13 @@
 //!
 //! # BLOCK contract (read this before integrating)
 //! A `BLOCK` verdict is returned as `result.content[0].text` (pretty JSON
-//! containing `"decision": "Block"`) **with `isError: true`**. Agents MUST
+//! containing `"decision": "BLOCK"`) **with `isError: true`**. Agents MUST
 //! treat `isError == true` as "do not execute" — checking only the absence
 //! of a protocol `error` field is a fail-open integration bug.
+//!
+//! Every `content[0].text` is JSON-parseable: guard verdicts serialize the
+//! result struct; bad-argument rejections serialize
+//! `{"decision":"BLOCK","reason":"…"}`. Never assume plain text.
 //!
 //! # Input bounds
 //! Each stdin line is capped at [`MAX_MCP_LINE_BYTES`] (1 MiB); oversized
@@ -15,6 +19,12 @@
 fn to_json<T: Serialize>(value: &T) -> String {
     serde_json::to_string_pretty(value)
         .unwrap_or_else(|_| "{\"error\":\"response serialization failed\"}".to_string())
+}
+
+/// Bad-argument BLOCK payload, JSON shaped like a guard verdict so every
+/// `content[0].text` is uniformly `JSON.parse`-able (never plain text).
+fn arg_block_text(reason: &str) -> String {
+    json!({"decision": "BLOCK", "reason": reason}).to_string()
 }
 
 use serde::Serialize;
@@ -32,11 +42,93 @@ pub const MAX_MCP_LINE_BYTES: usize = 1024 * 1024;
 #[tokio::main]
 async fn main() {
     let stdin = tokio::io::stdin();
-    let mut reader = BufReader::new(stdin).lines();
+    let mut reader = BufReader::new(stdin);
     let mut stdout = tokio::io::stdout();
+    let mut line_buf: Vec<u8> = Vec::new();
 
-    while let Ok(Some(line)) = reader.next_line().await {
-        if line.len() > MAX_MCP_LINE_BYTES {
+    loop {
+        line_buf.clear();
+        // Bounded line read: never buffer more than cap+1 bytes for one
+        // request. `BufReader::lines()` would heap the whole line BEFORE
+        // any length check — a newline-less flood is unbounded memory.
+        let mut oversized = false;
+        let mut eof = false;
+        loop {
+            let available = match reader.fill_buf().await {
+                Ok(buf) => buf,
+                Err(_) => {
+                    // Stdin transport error: say so on stdout, then exit.
+                    // (A dead pipe with no frame is undebuggable.)
+                    let _ = stdout
+                        .write_all(
+                            format!(
+                                "{}\n",
+                                json!({
+                                    "jsonrpc": "2.0",
+                                    "id": null,
+                                    "error": { "code": -32603, "message": "stdin transport error" }
+                                })
+                            )
+                            .as_bytes(),
+                        )
+                        .await;
+                    let _ = stdout.flush().await;
+                    return;
+                }
+            };
+            if available.is_empty() {
+                eof = true;
+                break;
+            }
+            match available.iter().position(|&b| b == b'\n') {
+                Some(nl) => {
+                    if line_buf.len() + nl + 1 > MAX_MCP_LINE_BYTES {
+                        oversized = true;
+                    } else {
+                        line_buf.extend_from_slice(&available[..=nl]);
+                    }
+                    reader.consume(nl + 1);
+                    break;
+                }
+                None => {
+                    if line_buf.len() + available.len() > MAX_MCP_LINE_BYTES {
+                        oversized = true;
+                    } else {
+                        line_buf.extend_from_slice(available);
+                    }
+                    let n = available.len();
+                    reader.consume(n);
+                }
+            }
+            if oversized {
+                // Discard the rest of the overlong line in bounded
+                // chunks, then emit -32600 below.
+                loop {
+                    let rest = match reader.fill_buf().await {
+                        Ok(buf) => buf,
+                        Err(_) => return,
+                    };
+                    if rest.is_empty() {
+                        break;
+                    }
+                    match rest.iter().position(|&b| b == b'\n') {
+                        Some(nl) => {
+                            reader.consume(nl + 1);
+                            break;
+                        }
+                        None => {
+                            let n = rest.len();
+                            reader.consume(n);
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        if eof && line_buf.is_empty() {
+            return;
+        }
+        if oversized {
             let err_resp = json!({
                 "jsonrpc": "2.0",
                 "id": null,
@@ -46,6 +138,19 @@ async fn main() {
             let _ = stdout.flush().await;
             continue;
         }
+        let line = match String::from_utf8(std::mem::take(&mut line_buf)) {
+            Ok(s) => s,
+            Err(_) => {
+                let err_resp = json!({
+                    "jsonrpc": "2.0",
+                    "id": null,
+                    "error": { "code": -32700, "message": "request is not valid UTF-8" }
+                });
+                let _ = stdout.write_all(format!("{}\n", err_resp).as_bytes()).await;
+                let _ = stdout.flush().await;
+                continue;
+            }
+        };
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -151,7 +256,7 @@ async fn main() {
                                         "jsonrpc": "2.0",
                                         "id": id,
                                         "result": {
-                                            "content": [{"type": "text", "text": "BLOCK — invalid updatedAt (expected decimal/0x string or integer)"}],
+                                            "content": [{"type": "text", "text": arg_block_text("BLOCK — invalid updatedAt (expected decimal/0x string or integer)")}],
                                             "isError": true
                                         }
                                     })).as_bytes()).await;
@@ -166,7 +271,7 @@ async fn main() {
                                     "jsonrpc": "2.0",
                                     "id": id,
                                     "result": {
-                                        "content": [{"type": "text", "text": "BLOCK — missing nowSeconds"}],
+                                        "content": [{"type": "text", "text": arg_block_text("BLOCK — missing nowSeconds")}],
                                         "isError": true
                                     }
                                 })).as_bytes()).await;
@@ -180,7 +285,7 @@ async fn main() {
                                         "jsonrpc": "2.0",
                                         "id": id,
                                         "result": {
-                                            "content": [{"type": "text", "text": "BLOCK — invalid nowSeconds (expected integer seconds)"}],
+                                            "content": [{"type": "text", "text": arg_block_text("BLOCK — invalid nowSeconds (expected integer seconds)")}],
                                             "isError": true
                                         }
                                     })).as_bytes()).await;
@@ -195,7 +300,7 @@ async fn main() {
                                     "jsonrpc": "2.0",
                                     "id": id,
                                     "result": {
-                                        "content": [{"type": "text", "text": "BLOCK — missing maxAgeSeconds"}],
+                                        "content": [{"type": "text", "text": arg_block_text("BLOCK — missing maxAgeSeconds")}],
                                         "isError": true
                                     }
                                 })).as_bytes()).await;
@@ -209,7 +314,7 @@ async fn main() {
                                         "jsonrpc": "2.0",
                                         "id": id,
                                         "result": {
-                                            "content": [{"type": "text", "text": "BLOCK — invalid maxAgeSeconds (expected integer seconds)"}],
+                                            "content": [{"type": "text", "text": arg_block_text("BLOCK — invalid maxAgeSeconds (expected integer seconds)")}],
                                             "isError": true
                                         }
                                     })).as_bytes()).await;
@@ -257,7 +362,7 @@ async fn main() {
                                     "jsonrpc": "2.0",
                                     "id": id,
                                     "result": {
-                                        "content": [{"type": "text", "text": "BLOCK — quote failed: missing answer (decimal/0x string or integer)"}],
+                                        "content": [{"type": "text", "text": arg_block_text("BLOCK — quote failed: missing answer (decimal/0x string or integer)")}],
                                         "isError": true
                                     }
                                 })).as_bytes()).await;
@@ -271,7 +376,7 @@ async fn main() {
                                         "jsonrpc": "2.0",
                                         "id": id,
                                         "result": {
-                                            "content": [{"type": "text", "text": "BLOCK — quote failed: invalid answer (expected decimal/0x string or integer; floats rejected)"}],
+                                            "content": [{"type": "text", "text": arg_block_text("BLOCK — quote failed: invalid answer (expected decimal/0x string or integer; floats rejected)")}],
                                             "isError": true
                                         }
                                     })).as_bytes()).await;
@@ -286,7 +391,7 @@ async fn main() {
                                     "jsonrpc": "2.0",
                                     "id": id,
                                     "result": {
-                                        "content": [{"type": "text", "text": "BLOCK — quote failed: missing decimals (query the feed's decimals() on-chain, never assume)"}],
+                                        "content": [{"type": "text", "text": arg_block_text("BLOCK — quote failed: missing decimals (query the feed's decimals() on-chain, never assume)")}],
                                         "isError": true
                                     }
                                 })).as_bytes()).await;
@@ -300,7 +405,7 @@ async fn main() {
                                         "jsonrpc": "2.0",
                                         "id": id,
                                         "result": {
-                                            "content": [{"type": "text", "text": "BLOCK — quote failed: invalid decimals (expected integer 0-36; query the feed's decimals() on-chain, never assume)"}],
+                                            "content": [{"type": "text", "text": arg_block_text("BLOCK — quote failed: invalid decimals (expected integer 0-36; query the feed's decimals() on-chain, never assume)")}],
                                             "isError": true
                                         }
                                     })).as_bytes()).await;
@@ -319,7 +424,7 @@ async fn main() {
                                         "jsonrpc": "2.0",
                                         "id": id,
                                         "result": {
-                                            "content": [{"type": "text", "text": "BLOCK — quote failed: invalid amountEth (expected number or numeric string)"}],
+                                            "content": [{"type": "text", "text": arg_block_text("BLOCK — quote failed: invalid amountEth (expected number or numeric string)")}],
                                             "isError": true
                                         }
                                     })).as_bytes()).await;
@@ -334,7 +439,7 @@ async fn main() {
                                 "jsonrpc": "2.0",
                                 "id": id,
                                 "result": {
-                                    "content": [{"type": "text", "text": "BLOCK — quote failed: invalid decimals (max 36; query the feed's decimals() on-chain, never assume)"}],
+                                    "content": [{"type": "text", "text": arg_block_text("BLOCK — quote failed: invalid decimals (max 36; query the feed's decimals() on-chain, never assume)")}],
                                     "isError": true
                                 }
                             })).as_bytes()).await;
@@ -349,7 +454,7 @@ async fn main() {
                                     "jsonrpc": "2.0",
                                     "id": id,
                                     "result": {
-                                        "content": [{"type": "text", "text": "BLOCK — quote failed: unparseable answer"}],
+                                        "content": [{"type": "text", "text": arg_block_text("BLOCK — quote failed: unparseable answer")}],
                                         "isError": true
                                     }
                                 })).as_bytes()).await;
@@ -381,7 +486,7 @@ async fn main() {
                                 "result": {
                                     "content": [{
                                         "type": "text",
-                                        "text": format!("BLOCK — quote failed: {}", e)
+                                        "text": arg_block_text(&format!("BLOCK — quote failed: {}", e))
                                     }],
                                     "isError": true
                                 }
@@ -389,15 +494,43 @@ async fn main() {
                         }
                     }
                     "stale_check" => {
-                        let rpc = args.get("rpc").and_then(|v| v.as_str()).unwrap_or("");
-                        let feed = args.get("feed").and_then(|v| v.as_str()).unwrap_or("");
+                        let rpc = match args.get("rpc") {
+                            Some(Value::String(s)) if !s.trim().is_empty() => s.clone(),
+                            _ => {
+                                let _ = stdout.write_all(format!("{}\n", json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": {
+                                        "content": [{"type": "text", "text": arg_block_text("BLOCK — missing rpc (Ethereum RPC URL is required)")}],
+                                        "isError": true
+                                    }
+                                })).as_bytes()).await;
+                                let _ = stdout.flush().await;
+                                continue;
+                            }
+                        };
+                        let feed = match args.get("feed") {
+                            Some(Value::String(s)) if !s.trim().is_empty() => s.clone(),
+                            _ => {
+                                let _ = stdout.write_all(format!("{}\n", json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": {
+                                        "content": [{"type": "text", "text": arg_block_text("BLOCK — missing feed (Data Feed proxy address is required)")}],
+                                        "isError": true
+                                    }
+                                })).as_bytes()).await;
+                                let _ = stdout.flush().await;
+                                continue;
+                            }
+                        };
                         let max_age_seconds = match args.get("maxAgeSeconds") {
                             None => {
                                 let _ = stdout.write_all(format!("{}\n", json!({
                                     "jsonrpc": "2.0",
                                     "id": id,
                                     "result": {
-                                        "content": [{"type": "text", "text": "BLOCK — missing maxAgeSeconds (no silent default; caller policy required)"}],
+                                        "content": [{"type": "text", "text": arg_block_text("BLOCK — missing maxAgeSeconds (no silent default; caller policy required)")}],
                                         "isError": true
                                     }
                                 })).as_bytes()).await;
@@ -411,7 +544,7 @@ async fn main() {
                                         "jsonrpc": "2.0",
                                         "id": id,
                                         "result": {
-                                            "content": [{"type": "text", "text": "BLOCK — invalid maxAgeSeconds (expected integer seconds)"}],
+                                            "content": [{"type": "text", "text": arg_block_text("BLOCK — invalid maxAgeSeconds (expected integer seconds)")}],
                                             "isError": true
                                         }
                                     })).as_bytes()).await;
@@ -429,7 +562,7 @@ async fn main() {
                                         "jsonrpc": "2.0",
                                         "id": id,
                                         "result": {
-                                            "content": [{"type": "text", "text": "BLOCK — invalid amountEth (expected number or numeric string)"}],
+                                            "content": [{"type": "text", "text": arg_block_text("BLOCK — invalid amountEth (expected number or numeric string)")}],
                                             "isError": true
                                         }
                                     })).as_bytes()).await;
@@ -447,7 +580,7 @@ async fn main() {
                                         "jsonrpc": "2.0",
                                         "id": id,
                                         "result": {
-                                            "content": [{"type": "text", "text": "BLOCK — invalid nowSeconds (expected integer seconds)"}],
+                                            "content": [{"type": "text", "text": arg_block_text("BLOCK — invalid nowSeconds (expected integer seconds)")}],
                                             "isError": true
                                         }
                                     })).as_bytes()).await;
@@ -456,23 +589,35 @@ async fn main() {
                                 }
                             },
                         };
-                        let allowed_hosts: Vec<String> = args
-                            .get("allowedRpcHosts")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|h| h.as_str())
-                                    .map(|h| h.trim().to_string())
-                                    .filter(|h| !h.is_empty())
-                                    .collect()
-                            })
-                            .unwrap_or_default();
+                        let allowed_hosts: Vec<String> = match args.get("allowedRpcHosts") {
+                            None | Some(Value::Null) => Vec::new(),
+                            Some(Value::Array(arr)) => arr
+                                .iter()
+                                .filter_map(|h| h.as_str())
+                                .map(|h| h.trim().to_string())
+                                .filter(|h| !h.is_empty())
+                                .collect(),
+                            Some(_) => {
+                                // Wrong type must BLOCK, never silently
+                                // downgrade to unrestricted egress.
+                                let _ = stdout.write_all(format!("{}\n", json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": {
+                                        "content": [{"type": "text", "text": arg_block_text("BLOCK — invalid allowedRpcHosts (expected array of host strings)")}],
+                                        "isError": true
+                                    }
+                                })).as_bytes()).await;
+                                let _ = stdout.flush().await;
+                                continue;
+                            }
+                        };
 
-                        let client = HttpRpcClient::new(rpc).with_allowed_hosts(allowed_hosts);
+                        let client = HttpRpcClient::new(&rpc).with_allowed_hosts(allowed_hosts);
                         let res = check_price(
                             &client,
                             CheckPriceInput {
-                                feed,
+                                feed: feed.as_str(),
                                 max_age_seconds,
                                 amount_eth,
                                 now_seconds,
@@ -640,5 +785,27 @@ mod tests {
         );
         assert_eq!(coerce_answer_str(&json!(1.5)), None);
         assert_eq!(coerce_answer_str(&json!(true)), None);
+    }
+
+    #[test]
+    fn test_arg_block_text_is_json_shaped_verdict() {
+        // Every content[0].text must be JSON.parse-able by integrators.
+        let text = arg_block_text("BLOCK — missing rpc");
+        let parsed: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(parsed["decision"], "BLOCK");
+        assert!(parsed["reason"].as_str().unwrap().contains("missing rpc"));
+    }
+
+    #[test]
+    fn test_nan_amount_blocked_downstream() {
+        // coerce_f64 accepts "NaN"; the quote guard must still BLOCK it.
+        let nan = coerce_f64(&json!("NaN")).unwrap();
+        assert!(nan.is_nan());
+        let res = quote_from_feed(QuoteInput {
+            answer: 2500_00000000,
+            decimals: 8,
+            amount: Some(nan),
+        });
+        assert!(res.is_err());
     }
 }
