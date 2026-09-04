@@ -49,8 +49,10 @@ pub async fn check_is_contract(client: &dyn EvmRpcClient, address: &str) -> Guar
         ));
     }
 
-    // EIP-7702 detection: 0xef0100 + 20-byte address indicates a delegated EOA, not a contract
-    if trimmed.starts_with("0xef0100") || trimmed.starts_with("0xEF0100") {
+    // EIP-7702 detection: 0xef0100 + 20-byte address indicates a delegated EOA, not a contract.
+    // Compared case-insensitively: RPC casing is attacker-controlled and
+    // `0X`/`0xEf0100` variants must not evade the check.
+    if body.to_lowercase().starts_with("ef0100") {
         return GuardrailResult::block(format!(
             "PHISHING DANGER: address {} is an EIP-7702 delegated EOA, not an immutable smart contract. — BLOCK",
             address
@@ -110,5 +112,23 @@ mod tests {
         let res = check_is_contract(&mock, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").await;
         assert!(!res.allow_execute);
         assert!(res.reason.contains("EIP-7702"));
+    }
+
+    #[tokio::test]
+    async fn test_eip7702_mixed_case_blocked() {
+        // Attacker-controlled RPC casing must not evade 7702 detection.
+        for code in [
+            "0xEf01005a7fc11397e9a8ad41bf10bf13f22b0a63f96f6d",
+            "0XEF01005A7FC11397E9A8AD41BF10BF13F22B0A63F96F6D",
+            "0XeF01005a7fc11397e9a8ad41bf10bf13f22b0a63f96f6d",
+        ] {
+            let mock = MockRpcClient {
+                code: Some(code.to_string()),
+                ..Default::default()
+            };
+            let res = check_is_contract(&mock, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").await;
+            assert!(!res.allow_execute, "code {} must BLOCK", code);
+            assert!(res.reason.contains("EIP-7702"));
+        }
     }
 }

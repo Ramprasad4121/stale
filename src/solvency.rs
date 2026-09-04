@@ -34,6 +34,11 @@ pub async fn check_balance(
         }
     }
 
+    if required_amount == 0 && gas_reserve_wei == 0 {
+        return GuardrailResult::block(
+            "vacuous solvency check (required 0 + reserve 0): an empty wallet would ALLOW — BLOCK (fail closed)",
+        );
+    }
     let balance = if let Some(token_addr) = token {
         let encoded = match encode_address_param(agent) {
             Ok(e) => e,
@@ -243,5 +248,25 @@ mod tests {
 
         assert!(!res.allow_execute);
         assert!(res.reason.contains("no gas"));
+    }
+
+    #[tokio::test]
+    async fn test_zero_zero_check_blocked_as_vacuous() {
+        let mock = MockRpcClient {
+            balance: Some(0),
+            ..Default::default()
+        };
+
+        let res = check_balance(
+            &mock,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            None,
+            0,
+            0,
+        )
+        .await;
+
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("vacuous"));
     }
 }

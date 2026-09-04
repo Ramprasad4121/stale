@@ -146,6 +146,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_transfer_nonzero_garbage_blocked() {
+        // Strict bool: only 0/1 are valid. A `2` must BLOCK, never ALLOW.
+        let mock = MockRpcClient {
+            call_handler: Some(Arc::new(move |_, _| Ok(format!("0x{:0>64x}", 2u64)))),
+            ..Default::default()
+        };
+
+        let res = check_token_tax(
+            &mock,
+            "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            1000,
+        )
+        .await;
+
+        assert!(!res.allow_execute);
+        assert!(res.reason.contains("fail closed"));
+    }
+
+    #[tokio::test]
     async fn test_transfer_malformed_response_blocked() {
         let mock = MockRpcClient {
             call_handler: Some(Arc::new(move |_, _| Ok("0xdead".to_string()))),
