@@ -110,6 +110,12 @@ async fn main() {
 
 ---
 
+## For AI Agents
+
+Building an agent on `stale`? Read **[PROMPT.md](PROMPT.md)**: the copy-paste wiring block, the 7 rules your agent must obey (`BLOCK` handling, live governor acquisition, exit codes, MCP `isError`), and the docs map. Start there, not here.
+
+---
+
 ## Available Guardrails
 
 ### Oracles & Feeds
