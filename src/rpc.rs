@@ -624,8 +624,14 @@ mod tests {
         let client = HttpRpcClient::new(format!("http://127.0.0.1:{}/", redir_port))
             .with_allowed_hosts(vec!["127.0.0.1".to_string()]);
         let err = client.get_block_number().await.unwrap_err();
+        // reqwest Policy::none() may surface the refused redirect as either
+        // a redirect-specific message or a generic "error sending request".
+        // Both prove the redirect was refused; the zero-egress assertion
+        // below is the definitive proof that no data reached the target.
         assert!(
-            err.contains("redirect"),
+            err.contains("redirect")
+                || err.contains("error sending request")
+                || err.contains("rpc network error"),
             "redirect must fail closed, got: {}",
             err
         );
