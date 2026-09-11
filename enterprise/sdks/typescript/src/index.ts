@@ -1,11 +1,17 @@
 /**
  * Stale Enterprise TypeScript SDK
  * Fail-closed guardrails for agents that touch money
+ * Dry-run / quote-only - never sends transactions
  * 
  * @example
  * import { Stale } from "@stale-enterprise/sdk";
  * const stale = new Stale({ apiKey: "stale_live_...", environment: "production" });
- * const result = await stale.pipeline.run({ rpc_url: "https://rpc.flashbots.net", chain_id: 1 });
+ * // Explicit rpc_url required - no default, fail-closed
+ * const result = await stale.pipeline.run({ 
+ *   rpc_url: "https://ethereum-rpc.publicnode.com", // your MEV-protected RPC
+ *   chain_id: 1,
+ *   checks: [{ type: "gas", config: { max_gas_gwei: 50 } }]
+ * });
  * if (result.decision === "BLOCK") throw new Error(result.reason);
  */
 
