@@ -1,0 +1,12 @@
+/target/
+**/target/
+node_modules/
+.next/
+dist/
+build/
+out/
+package-lock.json
+.env
+*.log
+.DS_Store
+.vscode/

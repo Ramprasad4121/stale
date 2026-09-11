@@ -1,0 +1,18 @@
+apiVersion: v2
+name: stale-enterprise
+description: Fail-closed guardrail platform for agents that touch money
+type: application
+version: 1.0.0
+appVersion: "2.0.0"
+keywords:
+  - defi
+  - security
+  - guardrails
+  - chainlink
+  - ai-agents
+home: https://github.com/Ramprasad4121/stale
+sources:
+  - https://github.com/Ramprasad4121/stale
+maintainers:
+  - name: Ramprasad Goud
+    email: ramprasadgoud34@gmail.com

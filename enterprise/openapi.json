@@ -1,0 +1,120 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Stale Enterprise API",
+    "description": "Fail-closed guardrail platform for agents that touch money - Enterprise",
+    "version": "1.0.0",
+    "contact": { "email": "ramprasad@stale.sh", "url": "https://github.com/Ramprasad4121/stale" }
+  },
+  "servers": [
+    { "url": "https://api.stale.sh", "description": "Production" },
+    { "url": "http://localhost:3001", "description": "Local" }
+  ],
+  "security": [{ "ApiKeyAuth": [] }],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "security": [],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/v1/pipeline/run": {
+      "post": {
+        "summary": "Run guardrail pipeline",
+        "description": "Runs fail-closed pipeline with policy. Any doubt → BLOCK. Webhook dispatched on BLOCK.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["rpc_url"],
+                "properties": {
+                  "rpc_url": { "type": "string", "example": "https://rpc.flashbots.net" },
+                  "policy_id": { "type": "string", "example": "prod-strict-v3" },
+                  "environment": { "type": "string", "enum": ["production", "staging", "development"] },
+                  "chain_id": { "type": "integer", "example": 1 },
+                  "checks": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "type": { "type": "string", "enum": ["price", "gas", "sequencer", "mev", "chain_id"] },
+                        "config": { "type": "object" }
+                      }
+                    }
+                  },
+                  "context": {
+                    "type": "object",
+                    "properties": {
+                      "target_address": { "type": "string" },
+                      "amount_usd": { "type": "number" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pipeline result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "trace_id": { "type": "string" },
+                    "decision": { "type": "string", "enum": ["ALLOW", "BLOCK"] },
+                    "blocked_by": { "type": "string", "nullable": true },
+                    "reason": { "type": "string" },
+                    "duration_ms": { "type": "number" },
+                    "results": { "type": "array", "items": { "type": "object" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "429": { "description": "Rate limited" }
+        }
+      }
+    },
+    "/v1/audit/logs": {
+      "get": {
+        "summary": "List audit logs",
+        "parameters": [
+          { "name": "decision", "in": "query", "schema": { "type": "string", "enum": ["ALLOW", "BLOCK"] } },
+          { "name": "blocked_by", "in": "query", "schema": { "type": "string" } },
+          { "name": "environment", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 100 } }
+        ],
+        "responses": { "200": { "description": "Logs" } }
+      }
+    },
+    "/v1/audit/stats": {
+      "get": {
+        "summary": "Get audit stats",
+        "responses": { "200": { "description": "Stats with block_rate, gas_saved_usd, top_blocked_reasons" } }
+      }
+    },
+    "/v1/policies": {
+      "get": { "summary": "List policies" },
+      "post": { "summary": "Create policy" }
+    },
+    "/v1/feeds": {
+      "get": { "summary": "List Chainlink feeds" }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "Bearer stale_live_... or X-API-Key header, or X-Org-Id for demo"
+      }
+    }
+  }
+}
