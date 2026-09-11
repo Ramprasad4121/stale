@@ -37,7 +37,7 @@
 ```
 Policy {
   rules: {
-    fail_mode: FailClosed | FailFast | WarnOnly
+    fail_mode: FailClosed | FailFast // WarnOnly removed - contradicts fail-closed, use audit_only flag for eval
     oracle: { max_age, feeds[], deviation_check, max_deviation_bps }
     gas: { max_gas_gwei, max_priority, block_on_high }
     network: { allowed_chain_ids, require_mev, allowed_rpc_hosts, check_sequencer }

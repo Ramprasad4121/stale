@@ -39,11 +39,15 @@ Stale core remains `stale = { path = "../stale-enterprise" }` — no modificatio
 - **Dashboard**: If API down → show stale data with warning, not empty ALLOW state
 - **Pipeline**: `MAX_GUARDS=64`, timeout 15s per guard, panic → BLOCK
 
-### 3. Demo Mode for Sales
-`X-Org-Id` header bypasses auth for demos. First org auto-seeded. This lets sales run `curl` without API keys, but prod requires `stale_live_` keys with bcrypt hash.
+### 3. Secure Auth - No Demo Bypass (Fixed)
+**Previous design (deprecated):** `X-Org-Id` header bypassed auth for demos. First org auto-seeded. This was removed as a BLOCKER.
 
-### 4. Simulated Checks for Offline Demo
-If `rpc_url` contains `example` or `flashbots`, we simulate ALLOW. This lets the dashboard work without real RPCs, but real prod uses actual `HttpRpcClient`.
+**Current (production):** All requests require bcrypt-verified `stale_live_` API key via `Authorization: Bearer` or `X-API-Key`. No `X-Org-Id` bypass exists. Auth middleware returns 401 if key invalid, expired, or inactive. Fail-closed. For local demo, seed script creates keys and prints prefix only - raw key retrieval via secure API creation flow once.
+
+### 4. Real Checks Only - No Simulated ALLOW (Fixed)
+**Previous design (deprecated):** If `rpc_url` contained `example` or `flashbots`, we simulated ALLOW with hardcoded `price_usd: 2500.0`. This was removed as a BLOCKER that violated fail-closed.
+
+**Current (production):** All RPC calls go through real `check_price`, `check_gas_price`, `check_sequencer`, `check_mev_rpc`, `check_chain_id` from `stale` core. RPC failures, decode errors, stale oracle → BLOCK. No hardcoded prices. SDKs require explicit `rpc_url` - no default to `https://rpc.flashbots.net`. See `enterprise/backend/src/services/stale_service.rs` for fail-closed implementation.
 
 ---
 
@@ -59,7 +63,7 @@ If `rpc_url` contains `example` or `flashbots`, we simulate ALLOW. This lets the
   - `OrgService`: orgs, users, api keys, verify
   - `WebhookService`: async dispatch to Slack/webhook on BLOCK
 - **routes/**: 15 endpoints (checks, pipeline, audit, policies, orgs, keys, feeds, health)
-- **middleware/**: API key auth with demo bypass
+- **middleware/**: API key auth with bcrypt verification + RBAC scopes (no demo bypass, fail-closed)
 
 **Lines**: ~2,500 Rust, 0 unsafe, all fail-closed
 
@@ -193,13 +197,16 @@ cd backend && cargo run
 cd frontend && npm install && npm run dev
 # → http://localhost:3000, /dashboard
 
-# Test API
+# Test API (requires API key - see backend logs for seeded demo key prefix, retrieve raw via creation endpoint)
 curl http://localhost:3001/health
-curl http://localhost:3001/v1/feeds -H "X-Org-Id: <id from backend logs>"
+curl http://localhost:3001/v1/feeds -H "X-API-Key: stale_live_..."
 curl -X POST http://localhost:3001/v1/pipeline/run \
   -H "Content-Type: application/json" \
-  -H "X-Org-Id: <id>" \
+  -H "X-API-Key: stale_live_..." \
   -d '{"rpc_url":"https://rpc.flashbots.net","chain_id":1,"checks":[{"type":"gas","config":{"max_gas_gwei":50}}]}'
+
+# Production uses Bearer token: Authorization: Bearer stale_live_...
+# No X-Org-Id bypass - fail-closed auth requires valid bcrypt-verified key
 ```
 
 ---

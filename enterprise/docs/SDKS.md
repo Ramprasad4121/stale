@@ -12,14 +12,14 @@ const stale = new Stale({
   environment: "production",
 });
 
-// Simple check
+// Simple check - dry-run only, never sends tx
 const gas = await stale.check.gas({
   rpc_url: "https://rpc.flashbots.net",
   max_gas_gwei: 50,
 });
 if (gas.decision === "BLOCK") throw new Error(gas.reason);
 
-// Pipeline with policy
+// Pipeline with policy - quote / dry-run only
 const result = await stale.pipeline.run({
   rpc_url: "https://rpc.flashbots.net",
   policy_id: "prod-strict-v3",
@@ -33,11 +33,17 @@ const result = await stale.pipeline.run({
 if (result.decision === "BLOCK") {
   console.error(`Blocked by ${result.blocked_by}: ${result.reason}`);
   // Webhook already dispatched to Slack
+  // Audit logged to ClickHouse - SOC2-ready
   return;
 }
 
-// Continue to sign and broadcast
-await wallet.sendTransaction(tx);
+// SECURITY: Stale is dry-run / quote-only, never calls eth_sendTransaction.
+// Only your app layer decides to sign/broadcast after ALLOW.
+// Example (your wallet logic, not stale SDK):
+// if (result.decision === "ALLOW") {
+//   const quote = await myDex.quote(tx); // quote only
+//   await myApp.handleAllow(result, quote); // your own signing flow
+// }
 ```
 
 ## Python
@@ -48,16 +54,16 @@ from stale_enterprise import Stale
 
 client = Stale(api_key="stale_live_...", environment="production")
 
-# Check price feed
+# Check price feed - dry-run, observed values only
 price_check = client.check.price(
     rpc_url="https://ethereum-rpc.publicnode.com",
     feed="ETH/USD",
     max_age_seconds=60
 )
 assert price_check.decision == "ALLOW"
-print(f"ETH price: ${price_check.metadata['price_usd']}")
+print(f"ETH price: ${price_check.metadata['price_usd']}") # observed, not invented
 
-# Pipeline
+# Pipeline - dry-run, never sends tx
 result = client.pipeline.run(
     rpc_url="https://rpc.flashbots.net",
     chain_id=1,
@@ -72,6 +78,8 @@ result = client.pipeline.run(
 if result.decision == "BLOCK":
     # Audit logged, Slack alerted
     raise Exception(f"Transaction blocked: {result.reason}")
+
+# After ALLOW, your app may proceed - stale never sends tx
 ```
 
 ## Rust
@@ -92,7 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let rpc = HttpRpcClient::new("https://rpc.flashbots.net");
     // let result = check_price(&rpc, CheckPriceInput { ... }).await;
 
-    // Enterprise pipeline (with audit, webhooks, policy)
+    // Enterprise pipeline (with audit, webhooks, policy) - dry-run only
     let req = PipelineRequest {
         rpc_url: "https://rpc.flashbots.net".to_string(),
         policy_id: Some("prod-strict-v3".to_string()),
@@ -136,6 +144,7 @@ const agent = new Agent({
   systemPrompt: `
   Before any transaction that moves money, you MUST call stale_guardrail.
   If it returns BLOCK, you MUST NOT proceed and must explain why.
+  Stale is dry-run only - it never sends transactions, only ALLOW/BLOCK decisions.
   `,
 });
 ```
@@ -164,7 +173,7 @@ User: Swap 1 ETH for USDC on Uniswap
 Claude: I'll check guardrails first...
 [Calls stale_check]
 → ALLOW: oracle fresh, gas 24 Gwei, MEV protected
-→ Proceeding with swap
+→ Quote ready, proceed with your wallet? (stale never sends tx)
 ```
 
 ## OpenAPI
@@ -173,6 +182,8 @@ Import `openapi.json` (generated from Axum) into Postman.
 
 Base: `https://api.stale.sh`
 
-Auth: Bearer token
+Auth: Bearer token (bcrypt-verified, RBAC scopes enforced)
 
 Endpoints: See API.md
+
+Security: No tx send path - only HttpRpcClient + webhook POST. SDKs are dry-run/quote only.

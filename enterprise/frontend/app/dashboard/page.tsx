@@ -24,9 +24,10 @@ export default function Dashboard() {
   useEffect(() => {
     async function fetchData() {
       try {
+        const apiKey = process.env.NEXT_PUBLIC_STALE_API_KEY || 'stale_live_demo';
         const [logsRes, statsRes] = await Promise.all([
-          fetch(`${API_URL}/v1/audit/logs?limit=20`, { headers: { 'X-Org-Id': 'demo' } }),
-          fetch(`${API_URL}/v1/audit/stats`, { headers: { 'X-Org-Id': 'demo' } }),
+          fetch(`${API_URL}/v1/audit/logs?limit=20`, { headers: { 'X-API-Key': apiKey } }),
+          fetch(`${API_URL}/v1/audit/stats`, { headers: { 'X-API-Key': apiKey } }),
         ]);
         if (logsRes.ok) {
           const data = await logsRes.json();
@@ -38,14 +39,17 @@ export default function Dashboard() {
         }
       } catch (e) {
         console.error(e);
-        // Mock data fallback
+        // DEMO-ONLY fallback - synthetic data, never SOC2. Production uses ClickHouse real observed values.
+        // gas_saved_usd = blocks * 47.5 is DEMO-ONLY estimate, not audited.
+        // Marked explicitly as DEMO to avoid misrepresentation.
         setStats({
-          total_checks: 1389,
-          total_blocks: 101,
-          total_allows: 1288,
+          total_checks: 1389, // DEMO-ONLY synthetic
+          total_blocks: 101, // DEMO-ONLY synthetic
+          total_allows: 1288, // DEMO-ONLY synthetic
           block_rate: 0.0727,
           avg_duration_ms: 34.2,
-          gas_saved_usd: 4797.5,
+          gas_saved_usd: 4797.5, // DEMO-ONLY: blocks * 47.5 estimate, not SOC2
+          is_demo: true, // flag for UI badge
           top_blocked_reasons: [
             { guard: "gas_price", count: 32, percentage: 31.7 },
             { guard: "oracle_freshness", count: 28, percentage: 27.7 },
@@ -114,8 +118,11 @@ export default function Dashboard() {
       <div className="ml-64 p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-white">Security Dashboard</h1>
-            <p className="text-slate-400 text-sm mt-1">Real-time guardrail monitoring • Acme DeFi Corp • Production</p>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-white">Security Dashboard</h1>
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-bold">DEMO-ONLY DATA</span>
+            </div>
+            <p className="text-slate-400 text-sm mt-1">Real-time guardrail monitoring • Acme DeFi Corp • Production • <span className="text-amber-400">Synthetic demo logs - not SOC2</span></p>
           </div>
           <div className="flex items-center gap-3">
             <div className="px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center gap-1.5">
@@ -169,8 +176,8 @@ export default function Dashboard() {
               <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Saved</span>
             </div>
             <div className="text-2xl font-bold text-white font-mono">${stats?.gas_saved_usd?.toLocaleString() || '4,797'}</div>
-            <div className="text-xs text-slate-400 mt-1">Gas & Loss Prevented</div>
-            <div className="mt-3 text-[11px] text-slate-500">Avg $47.50 per BLOCK • 101 blocks</div>
+            <div className="text-xs text-slate-400 mt-1">Gas & Loss Prevented <span className="text-amber-400 text-[10px]">(DEMO-ONLY)</span></div>
+            <div className="mt-3 text-[11px] text-slate-500">DEMO: blocks*47.5 estimate, not SOC2 • {stats?.total_blocks || 101} blocks</div>
           </div>
 
           <div className="p-5 rounded-2xl bg-slate-900/50 border border-slate-800/50 backdrop-blur">

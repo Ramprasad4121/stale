@@ -1,3 +1,8 @@
+# SECURITY: This compose file is for LOCAL DEMO ONLY.
+# - Plaintext demo credentials are DEMO-ONLY, never for production/SOC2.
+# - Production MUST use external secrets (existingSecret / external-secrets operator) + env_file.
+# - See enterprise/infra/k8s/values.yaml for secure pattern with existingSecret.
+# - For local, override via env_file: .env.local (not committed) or export POSTGRES_PASSWORD.
 version: '3.8'
 
 services:
@@ -10,8 +15,12 @@ services:
     environment:
       - PORT=3001
       - RUST_LOG=info
-      - DATABASE_URL=postgres://stale:stale@postgres:5432/stale_enterprise
+      # DEMO-ONLY: In production, use existingSecret + external-secrets operator
+      # Override via env_file: .env.local or environment variable injection
+      - DATABASE_URL=${DATABASE_URL:-postgres://stale:${POSTGRES_PASSWORD:-demo_only_local}@postgres:5432/stale_enterprise}
       - REDIS_URL=redis://redis:6379
+    env_file:
+      - .env.local # optional, not committed - for local secret overrides
     depends_on:
       - postgres
       - redis
@@ -40,8 +49,9 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_USER=stale
-      - POSTGRES_PASSWORD=stale
+      # DEMO-ONLY credentials - production uses existingSecret stale-postgres-secret
+      - POSTGRES_USER=${POSTGRES_USER:-stale}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-demo_only_local}
       - POSTGRES_DB=stale_enterprise
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -57,7 +67,7 @@ services:
     networks:
       - stale-net
 
-  # ClickHouse for audit logs (prod)
+  # ClickHouse for audit logs (prod profile only)
   clickhouse:
     image: clickhouse/clickhouse-server:24-alpine
     ports:

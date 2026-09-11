@@ -2,7 +2,7 @@
 
 Base URL: `https://api.stale.sh` (prod) or `http://localhost:3001` (local)
 
-Auth: `Authorization: Bearer stale_live_...` or `X-API-Key: stale_live_...` or demo `X-Org-Id: <uuid>`
+Auth: `Authorization: Bearer stale_live_...` or `X-API-Key: stale_live_...` (bcrypt-verified, RBAC scopes enforced, no X-Org-Id bypass - fail-closed)
 
 ## Health
 
@@ -87,10 +87,10 @@ POST /v1/pipeline/run
 }
 ```
 
-Fail modes:
-- FailClosed (default): run all, BLOCK if any fails
-- FailFast: stop on first BLOCK
-- WarnOnly: log but ALLOW (audit mode)
+Fail modes (ALLOW-or-BLOCK only, fail-closed):
+- FailClosed (default, enterprise): run all checks, BLOCK if any fails
+- FailFast: stop on first BLOCK, return immediately
+- Note: WarnOnly removed - contradicts fail-closed. For audit-only evaluation, use ?audit_only=true (logs but never ALLOWs execution in prod)
 
 ## Audit
 

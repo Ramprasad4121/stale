@@ -47,8 +47,8 @@ This is the enterprise transformation of [stale](https://github.com/Ramprasad412
 │  • GET  /health, /metrics (Prometheus)                 │
 │                                                         │
 │  Middleware:                                            │
-│  • API Key Auth (Bearer + X-API-Key + X-Org-Id demo)   │
-│  • RBAC (Owner/Admin/Dev/Auditor/Viewer)               │
+│  • API Key Auth (Bearer + X-API-Key, bcrypt, RBAC)     │
+│  • RBAC (Owner/Admin/Dev/Auditor/Viewer) - scopes      │
 │  • Rate Limiting per org (stale::RateLimiter)          │
 │  • Audit Logging (every ALLOW/BLOCK)                   │
 └──────────────────────┬──────────────────────────────────┘
@@ -88,7 +88,7 @@ Integrations:
   - `Production - Strict` (default, 60s oracle, 50 Gwei, MEV required)
   - `Staging - Permissive` (300s, 100 Gwei, MEV optional)
   - `High-Value - Fort Knox` (30s, 30 Gwei, 10 tx/min, $10k/hr cap)
-- Fail modes: FailFast (first BLOCK), FailClosed (all checks, enterprise default), WarnOnly (audit)
+- Fail modes: FailFast (first BLOCK), FailClosed (all checks, enterprise default) - WarnOnly removed (contradicts fail-closed)
 - Custom guards via WASM (roadmap)
 
 ### 3. Audit & Compliance
@@ -99,9 +99,10 @@ Integrations:
 - Demo: 50 seeded logs with realistic BLOCK reasons
 
 ### 4. API & SDKs
-- **Auth**: `Authorization: Bearer stale_live_...` or `X-API-Key` or demo `X-Org-Id`
-- **Endpoints**: 15+ including `/v1/pipeline/run` which uses policy or custom checks
-- **SDKs**: Rust (native), TypeScript (fetch wrapper), Python (requests) — see `docs/sdks.md`
+- **Auth**: `Authorization: Bearer stale_live_...` or `X-API-Key` (bcrypt-verified, no X-Org-Id bypass)
+- **RBAC**: Scopes `AuditRead`, `PoliciesRead/Write`, `CheckRead`, `PipelineRun` enforced per route (403 if missing)
+- **Endpoints**: 15+ including `/v1/pipeline/run` which uses policy or custom checks - real `check_*` only, fail-closed
+- **SDKs**: Rust (native), TypeScript (fetch wrapper), Python (requests) — see `docs/sdks.md` (no tx send, dry-run only)
 - **MCP**: Existing `stale-mcp` still works, now proxies to enterprise API
 
 ### 5. Ops & Billing
@@ -119,12 +120,15 @@ Integrations:
 cd backend
 cargo run --release
 # → http://localhost:3001
+# Seeded demo API keys printed with prefix only (raw keys not logged for security)
+# Retrieve raw key via secure creation endpoint, then:
 # Try: curl http://localhost:3001/health
-# Try: curl http://localhost:3001/v1/feeds -H "X-Org-Id: <org_id from logs>"
+# Try: curl http://localhost:3001/v1/feeds -H "X-API-Key: stale_live_..."
 # Try: curl -X POST http://localhost:3001/v1/pipeline/run \
 #   -H "Content-Type: application/json" \
-#   -H "X-Org-Id: <id>" \
+#   -H "X-API-Key: stale_live_..." \
 #   -d '{"rpc_url":"https://rpc.flashbots.net","chain_id":1,"checks":[{"type":"gas","config":{"max_gas_gwei":50}}]}'
+# Prod: Authorization: Bearer stale_live_... + RBAC scopes enforced
 ```
 
 ### Frontend (Dashboard)
