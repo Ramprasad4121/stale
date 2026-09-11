@@ -1,5 +1,8 @@
 # stale
 
+> **🚀 NEW: Stale Enterprise Platform** — Full SaaS platform with dashboard, policies, audit logs, SSO, 99.99% SLA. See [ENTERPRISE.md](ENTERPRISE.md). All security blockers fixed: fail-closed, no auth bypass, builds, real audit logs.
+
+
 `stale` is a fail-closed DeFi security guardrail library for autonomous AI agents, written in Rust.
 
 Before an agent signs and broadcasts a transaction, `stale` runs pre-flight checks against on-chain state and oracle feeds. If an oracle is stale, an L2 sequencer is down, a pool lacks liquidity, or an approval is unbounded, execution blocks immediately.

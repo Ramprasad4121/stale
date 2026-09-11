@@ -1,0 +1,18 @@
+[package]
+name = "stale-enterprise-sdk"
+version = "1.0.0"
+edition = "2021"
+description = "Enterprise SDK for Stale - fail-closed guardrails for agents that touch money"
+license = "MIT"
+repository = "https://github.com/Ramprasad4121/stale"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+thiserror = "2.0"
+stale = { path = "../../../stale-enterprise", version = "2.0.0" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }

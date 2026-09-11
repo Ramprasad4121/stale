@@ -1,0 +1,22 @@
+{
+  "name": "@stale-enterprise/sdk",
+  "version": "1.0.0",
+  "description": "Enterprise SDK for Stale - fail-closed guardrails for agents that touch money",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w",
+    "test": "jest"
+  },
+  "keywords": ["defi", "guardrails", "security", "chainlink", "enterprise"],
+  "author": "Stale Enterprise",
+  "license": "MIT",
+  "dependencies": {
+    "cross-fetch": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}
